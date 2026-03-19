@@ -69,6 +69,7 @@
             justify-content: center;
             flex-direction: column;
             gap: 1.5rem;
+            transition: opacity 0.5s ease;
         }
 
         .pulse { animation: pulse 2s infinite; }
@@ -80,12 +81,13 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, collection, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Configuration
-        const firebaseConfig = JSON.parse(window.__firebase_config || '{}');
+        const firebaseConfig = window.__firebase_config ? JSON.parse(window.__firebase_config) : {};
         const appId = window.__app_id || 'lifelift-ease-sync';
+        const initialAuthToken = window.__initial_auth_token;
         
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
@@ -100,33 +102,53 @@
         const deviceIdDisplay = document.getElementById('device-id');
         const syncLabel = document.getElementById('sync-label');
 
+        const removeLoader = () => {
+            const loader = document.getElementById('loader');
+            if (loader) {
+                loader.style.opacity = '0';
+                setTimeout(() => loader.remove(), 500);
+            }
+        };
+
         async function init() {
             try {
-                await signInAnonymously(auth);
+                // Priority for Custom Token over Anonymous
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
                         currentUser = user;
                         deviceIdDisplay.textContent = user.uid.slice(0, 12);
                         setupSubscriptions();
-                        setTimeout(() => {
-                            document.getElementById('loader').style.opacity = '0';
-                            setTimeout(() => document.getElementById('loader').remove(), 500);
-                        }, 800);
+                        setTimeout(removeLoader, 800);
+                    } else {
+                        // If user is null but auth is initialized, we might be in a logout state
+                        syncLabel.textContent = "ממתין להתחברות...";
                     }
                 });
             } catch (err) {
                 console.error("Connection error", err);
-                syncLabel.textContent = "שגיאת חיבור";
+                syncLabel.innerHTML = '<span class="text-rose-500">שגיאת חיבור לענן</span>';
+                setTimeout(removeLoader, 2000); // Remove loader even on error so user can see the status
             }
         }
 
         function setupSubscriptions() {
+            if (!currentUser) return;
+
             // Subscribe to Tasks
             const tasksRef = collection(db, 'artifacts', appId, 'users', currentUser.uid, 'tasks');
             onSnapshot(tasksRef, (snapshot) => {
                 const tasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                renderTasks(tasks.sort((a, b) => b.createdAt - a.createdAt));
+                renderTasks(tasks.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
                 syncLabel.innerHTML = '<i class="fas fa-cloud text-emerald-400 mr-1"></i> EaseSync פעיל';
+            }, (error) => {
+                console.error("Tasks subscription error:", error);
+                syncLabel.innerHTML = '<span class="text-amber-500">שגיאה בסנכרון משימות</span>';
             });
 
             // Subscribe to Notes
@@ -135,6 +157,8 @@
                 if (docSnap.exists() && document.activeElement !== notesArea) {
                     notesArea.value = docSnap.data().content || '';
                 }
+            }, (error) => {
+                console.error("Notes subscription error:", error);
             });
         }
 
@@ -144,30 +168,48 @@
             if (!val || !currentUser) return;
 
             const taskId = Date.now().toString();
-            await setDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'tasks', taskId), {
-                text: val,
-                completed: false,
-                createdAt: Date.now()
-            });
-            input.value = '';
+            try {
+                await setDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'tasks', taskId), {
+                    text: val,
+                    completed: false,
+                    createdAt: Date.now()
+                });
+                input.value = '';
+            } catch (err) {
+                console.error("Failed to add task:", err);
+            }
         };
 
         window.toggleTask = async (id, status) => {
-            await updateDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'tasks', id), {
-                completed: !status
-            });
+            if (!currentUser) return;
+            try {
+                await updateDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'tasks', id), {
+                    completed: !status
+                });
+            } catch (err) {
+                console.error("Failed to toggle task:", err);
+            }
         };
 
         window.deleteTask = async (id) => {
-            await deleteDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'tasks', id));
+            if (!currentUser) return;
+            try {
+                await deleteDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'tasks', id));
+            } catch (err) {
+                console.error("Failed to delete task:", err);
+            }
         };
 
         window.saveNotes = async () => {
             if (!currentUser) return;
-            await setDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'data', 'notes'), {
-                content: notesArea.value,
-                updatedAt: Date.now()
-            });
+            try {
+                await setDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'data', 'notes'), {
+                    content: notesArea.value,
+                    updatedAt: Date.now()
+                });
+            } catch (err) {
+                console.error("Failed to save notes:", err);
+            }
         };
 
         function renderTasks(tasks) {
@@ -176,11 +218,11 @@
                 const item = document.createElement('div');
                 item.className = `task-card flex items-center gap-4 p-5 rounded-3xl border ${task.completed ? 'bg-black/20 border-white/5 opacity-50' : 'glass border-white/10'}`;
                 item.innerHTML = `
-                    <button onclick="toggleTask('${task.id}', ${task.completed})" class="text-2xl transition-transform active:scale-90">
+                    <button onclick="toggleTask('${task.id}', ${task.completed})" class="text-2xl transition-transform active:scale-90 focus:outline-none">
                         <i class="${task.completed ? 'fas fa-check-circle text-emerald-500' : 'far fa-circle text-slate-500'}"></i>
                     </button>
-                    <span class="flex-1 text-lg font-medium ${task.completed ? 'line-through' : ''}">${task.text}</span>
-                    <button onclick="deleteTask('${task.id}')" class="text-slate-600 hover:text-rose-500 p-2">
+                    <span class="flex-1 text-lg font-medium ${task.completed ? 'line-through text-slate-500' : 'text-slate-100'}">${task.text}</span>
+                    <button onclick="deleteTask('${task.id}')" class="text-slate-600 hover:text-rose-500 p-2 transition-colors">
                         <i class="fas fa-trash-alt text-sm"></i>
                     </button>
                 `;
@@ -194,21 +236,22 @@
             if (e.key === 'Enter' && document.activeElement.id === 'task-input') addTask();
         });
 
-        init();
+        // Initialize on window load
+        window.addEventListener('load', init);
     </script>
 </head>
 <body class="min-h-screen">
 
     <!-- Loading Screen -->
     <div id="loader">
-        <div class="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-        <p class="text-indigo-400 font-bold pulse uppercase tracking-widest">Identifying Device...</p>
+        <div class="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin shadow-[0_0_15px_rgba(99,102,241,0.5)]"></div>
+        <p class="text-indigo-400 font-bold pulse uppercase tracking-widest text-sm">מזהה מכשיר...</p>
     </div>
 
     <!-- Background -->
-    <div class="fixed inset-0 pointer-events-none z-0">
-        <div class="absolute top-0 right-0 w-[500px] h-[500px] bg-indigo-600/10 blur-[120px] rounded-full"></div>
-        <div class="absolute bottom-0 left-0 w-[500px] h-[500px] bg-purple-600/10 blur-[120px] rounded-full"></div>
+    <div class="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+        <div class="absolute top-0 right-0 w-[600px] h-[600px] bg-indigo-600/10 blur-[120px] rounded-full"></div>
+        <div class="absolute bottom-0 left-0 w-[600px] h-[600px] bg-purple-600/10 blur-[120px] rounded-full"></div>
     </div>
 
     <div class="relative z-10 flex flex-col min-h-screen">
@@ -220,7 +263,10 @@
                 </div>
                 <div>
                     <h1 class="text-3xl font-black italic tracking-tighter text-white">LifeLift <span class="text-indigo-500">PRO MAX</span></h1>
-                    <div id="sync-label" class="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mt-1">מתחבר...</div>
+                    <div id="sync-label" class="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mt-1 flex items-center gap-1">
+                        <i class="fas fa-circle-notch animate-spin text-[8px]"></i>
+                        מתחבר...
+                    </div>
                 </div>
             </div>
             
@@ -252,7 +298,7 @@
                         <input type="text" id="task-input" placeholder="מה המשימה הבאה?" 
                             class="w-full bg-black/40 border border-white/10 rounded-[1.5rem] py-5 pr-14 pl-6 focus:ring-2 focus:ring-indigo-500/50 outline-none text-lg transition-all text-white placeholder:text-slate-600">
                         <i class="fas fa-plus absolute right-6 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors"></i>
-                        <button onclick="addTask()" class="absolute left-3 top-1/2 -translate-y-1/2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-xl text-sm font-bold transition-all shadow-lg shadow-indigo-600/20">
+                        <button onclick="addTask()" class="absolute left-3 top-1/2 -translate-y-1/2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-xl text-sm font-bold transition-all shadow-lg shadow-indigo-600/20 active:scale-95">
                             הוסף
                         </button>
                     </div>
@@ -275,7 +321,7 @@
                         <button id="timer-toggle" onclick="toggleTimer()" class="flex-1 bg-white text-indigo-900 py-4 rounded-2xl font-black hover:scale-[1.02] active:scale-95 transition-all shadow-xl">
                             התחל
                         </button>
-                        <button onclick="resetTimer()" class="p-4 bg-black/20 text-white rounded-2xl hover:bg-black/30 transition-all">
+                        <button onclick="resetTimer()" class="p-4 bg-black/20 text-white rounded-2xl hover:bg-black/30 transition-all active:scale-90">
                             <i class="fas fa-redo"></i>
                         </button>
                     </div>
@@ -304,7 +350,8 @@
         // Clock
         function updateClock() {
             const now = new Date();
-            document.getElementById('clock').textContent = now.getHours().toString().padStart(2,'0') + ":" + now.getMinutes().toString().padStart(2,'0');
+            const clock = document.getElementById('clock');
+            if (clock) clock.textContent = now.getHours().toString().padStart(2,'0') + ":" + now.getMinutes().toString().padStart(2,'0');
         }
         setInterval(updateClock, 1000);
         updateClock();
@@ -329,6 +376,8 @@
                         document.getElementById('timer-display').textContent = `${m}:${s}`;
                     } else {
                         clearInterval(timerInterval);
+                        timerInterval = null;
+                        alert("זמן הפוקוס נגמר!");
                     }
                 }, 1000);
             }
