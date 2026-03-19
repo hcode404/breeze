@@ -3,22 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LifeLift Pro Max | EaseSync</title>
+    <title>EaseSync Pro Max | הופכים את החיים לקלים</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;700;800&display=swap');
         
-        :root {
-            --primary: #6366f1;
-            --secondary: #a855f7;
-            --bg: #020617;
-        }
-
         body {
             font-family: 'Assistant', sans-serif;
-            background-color: var(--bg);
+            background-color: #020617;
             color: #f1f5f9;
             margin: 0;
             overflow-x: hidden;
@@ -26,93 +19,73 @@
 
         .glass {
             background: rgba(15, 23, 42, 0.7);
-            backdrop-filter: blur(16px);
+            backdrop-filter: blur(20px);
             border: 1px solid rgba(255, 255, 255, 0.08);
-            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
         }
-
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(99, 102, 241, 0.4); }
 
         .task-card {
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         .task-card:hover {
+            transform: translateY(-2px);
             background: rgba(255, 255, 255, 0.05);
-            transform: scale(1.01);
         }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(99, 102, 241, 0.3); border-radius: 10px; }
 
         #loader {
             position: fixed;
             inset: 0;
-            background: var(--bg);
+            background: #020617;
             z-index: 999;
             display: flex;
             align-items: center;
             justify-content: center;
             flex-direction: column;
             gap: 1.5rem;
-            transition: opacity 0.5s ease;
         }
 
-        .pulse { animation: pulse 2s infinite; }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .tab-active {
+            background: rgba(99, 102, 241, 0.1);
+            color: #818cf8;
+            border-bottom: 2px solid #6366f1;
         }
     </style>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, onSnapshot, collection, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection, deleteDoc, updateDoc, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Configuration check and initialization
-        const getFirebaseConfig = () => {
-            try {
-                return window.__firebase_config ? JSON.parse(window.__firebase_config) : null;
-            } catch (e) {
-                return null;
-            }
-        };
+        // Global environment variables
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'ease-sync-pro-max';
+        const initialToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-        const firebaseConfig = getFirebaseConfig();
-        const appId = window.__app_id || 'lifelift-ease-sync';
-        const initialAuthToken = window.__initial_auth_token;
-        
-        // UI Refs
-        const taskList = document.getElementById('task-list');
-        const taskCount = document.getElementById('task-count');
-        const notesArea = document.getElementById('notes-area');
-        const deviceIdDisplay = document.getElementById('device-id');
+        let app, auth, db, user = null;
+        let activeTab = 'personal';
+
+        // UI Elements
+        const loader = document.getElementById('loader');
         const syncLabel = document.getElementById('sync-label');
-
-        const removeLoader = () => {
-            const loader = document.getElementById('loader');
-            if (loader) {
-                loader.style.opacity = '0';
-                setTimeout(() => loader.remove(), 500);
-            }
-        };
-
-        let app, auth, db, currentUser = null;
+        const taskList = document.getElementById('task-list');
+        const notesArea = document.getElementById('notes-area');
+        const nearbyList = document.getElementById('nearby-list');
 
         async function init() {
-            // Safety timeout to remove loader if things take too long
-            const failsafe = setTimeout(() => {
-                if (!currentUser) {
-                    syncLabel.innerHTML = '<span class="text-amber-500">החיבור מתעכב... נסה לרענן</span>';
-                    removeLoader();
-                }
-            }, 8000);
-
-            if (!firebaseConfig || !firebaseConfig.apiKey) {
-                console.error("Firebase config missing");
-                syncLabel.innerHTML = '<span class="text-rose-500">חסרות הגדרות מערכת</span>';
-                removeLoader();
+            if (!firebaseConfig.apiKey) {
+                console.warn("Firebase config missing. Running in local mode.");
+                syncLabel.innerHTML = '<span class="text-amber-500"><i class="fas fa-exclamation-triangle"></i> מצב מקומי בלבד</span>';
+                loader.style.display = 'none';
                 return;
             }
 
@@ -121,282 +94,256 @@
                 auth = getAuth(app);
                 db = getFirestore(app);
 
-                // Priority for Custom Token (Rule 3)
-                if (initialAuthToken && initialAuthToken !== "undefined") {
-                    await signInWithCustomToken(auth, initialAuthToken);
+                // Authentication (Rule 3)
+                if (initialToken && initialToken !== "undefined") {
+                    await signInWithCustomToken(auth, initialToken);
                 } else {
                     await signInAnonymously(auth);
                 }
 
-                onAuthStateChanged(auth, (user) => {
-                    if (user) {
-                        clearTimeout(failsafe);
-                        currentUser = user;
-                        deviceIdDisplay.textContent = user.uid.slice(0, 12);
-                        setupSubscriptions();
-                        removeLoader();
+                onAuthStateChanged(auth, (u) => {
+                    if (u) {
+                        user = u;
+                        document.getElementById('device-id').textContent = u.uid.slice(0, 10);
+                        startSync();
+                        loader.style.opacity = '0';
+                        setTimeout(() => loader.style.display = 'none', 500);
                     }
                 });
             } catch (err) {
-                console.error("Initialization error:", err);
-                syncLabel.innerHTML = '<span class="text-rose-500">שגיאה בחיבור לענן</span>';
-                removeLoader();
+                console.error("Firebase init failed:", err);
+                syncLabel.innerHTML = '<span class="text-rose-500">שגיאת חיבור לענן</span>';
+                loader.style.display = 'none';
             }
         }
 
-        function setupSubscriptions() {
-            if (!currentUser || !db) return;
+        function startSync() {
+            if (!user || !db) return;
 
-            // Subscribe to Tasks
-            const tasksRef = collection(db, 'artifacts', appId, 'users', currentUser.uid, 'tasks');
+            // Sync Tasks (Private Path - Rule 1)
+            const tasksRef = collection(db, 'artifacts', appId, 'users', user.uid, 'tasks');
             onSnapshot(tasksRef, (snapshot) => {
                 const tasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 renderTasks(tasks.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
-                syncLabel.innerHTML = '<i class="fas fa-cloud text-emerald-400 mr-1"></i> EaseSync פעיל';
-            }, (error) => {
-                console.error("Tasks subscription error:", error);
-                syncLabel.innerHTML = '<span class="text-amber-500">שגיאה בסנכרון משימות</span>';
-            });
+                syncLabel.innerHTML = '<span class="text-emerald-400"><i class="fas fa-cloud"></i> EaseSync מחובר</span>';
+            }, (err) => console.error("Sync tasks error:", err));
 
-            // Subscribe to Notes
-            const notesRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'data', 'notes');
+            // Sync Notes
+            const notesRef = doc(db, 'artifacts', appId, 'users', user.uid, 'data', 'notes');
             onSnapshot(notesRef, (docSnap) => {
                 if (docSnap.exists() && document.activeElement !== notesArea) {
                     notesArea.value = docSnap.data().content || '';
                 }
-            }, (error) => {
-                console.error("Notes subscription error:", error);
             });
+
+            // Start Presence & Location
+            updatePresence();
+            setInterval(updatePresence, 30000); // Every 30s
+            listenToNearby();
         }
 
+        // --- Actions ---
         window.addTask = async () => {
             const input = document.getElementById('task-input');
-            const val = input.value.trim();
-            if (!val || !currentUser || !db) return;
-
+            if (!input.value.trim() || !user) return;
             const taskId = Date.now().toString();
-            try {
-                await setDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'tasks', taskId), {
-                    text: val,
-                    completed: false,
-                    createdAt: Date.now()
-                });
-                input.value = '';
-            } catch (err) {
-                console.error("Failed to add task:", err);
-            }
+            await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', taskId), {
+                text: input.value.trim(),
+                completed: false,
+                createdAt: Date.now()
+            });
+            input.value = '';
         };
 
         window.toggleTask = async (id, status) => {
-            if (!currentUser || !db) return;
-            try {
-                await updateDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'tasks', id), {
-                    completed: !status
-                });
-            } catch (err) {
-                console.error("Failed to toggle task:", err);
-            }
+            await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', id), {
+                completed: !status
+            });
         };
 
         window.deleteTask = async (id) => {
-            if (!currentUser || !db) return;
-            try {
-                await deleteDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'tasks', id));
-            } catch (err) {
-                console.error("Failed to delete task:", err);
-            }
+            await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', id));
         };
 
         window.saveNotes = async () => {
-            if (!currentUser || !db) return;
-            try {
-                await setDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'data', 'notes'), {
-                    content: notesArea.value,
-                    updatedAt: Date.now()
-                }, { merge: true });
-            } catch (err) {
-                console.error("Failed to save notes:", err);
-            }
+            if (!user) return;
+            await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'data', 'notes'), {
+                content: notesArea.value,
+                updatedAt: Date.now()
+            });
         };
 
+        // --- Presence & Social ---
+        async function updatePresence() {
+            if (!user) return;
+            navigator.geolocation.getCurrentPosition(async (pos) => {
+                const presenceRef = doc(db, 'artifacts', appId, 'public', 'data', 'presence', user.uid);
+                await setDoc(presenceRef, {
+                    uid: user.uid,
+                    lat: pos.coords.latitude,
+                    lng: pos.coords.longitude,
+                    lastSeen: Date.now(),
+                    name: `User_${user.uid.slice(0, 4)}`
+                }, { merge: true });
+            });
+        }
+
+        function listenToNearby() {
+            const presenceRef = collection(db, 'artifacts', appId, 'public', 'data', 'presence');
+            onSnapshot(presenceRef, (snapshot) => {
+                const users = snapshot.docs.map(doc => doc.data()).filter(u => u.uid !== user.uid);
+                renderNearby(users);
+            });
+        }
+
+        // --- UI Rendering ---
         function renderTasks(tasks) {
             taskList.innerHTML = '';
             tasks.forEach(task => {
-                const item = document.createElement('div');
-                item.className = `task-card flex items-center gap-4 p-5 rounded-3xl border ${task.completed ? 'bg-black/20 border-white/5 opacity-50' : 'glass border-white/10'}`;
-                item.innerHTML = `
-                    <button onclick="toggleTask('${task.id}', ${task.completed})" class="text-2xl transition-transform active:scale-90 focus:outline-none">
+                const div = document.createElement('div');
+                div.className = `task-card flex items-center gap-4 p-4 rounded-2xl border ${task.completed ? 'bg-black/20 border-white/5 opacity-50' : 'glass border-white/10'}`;
+                div.innerHTML = `
+                    <button onclick="toggleTask('${task.id}', ${task.completed})" class="text-xl">
                         <i class="${task.completed ? 'fas fa-check-circle text-emerald-500' : 'far fa-circle text-slate-500'}"></i>
                     </button>
-                    <span class="flex-1 text-lg font-medium ${task.completed ? 'line-through text-slate-500' : 'text-slate-100'}">${task.text}</span>
-                    <button onclick="deleteTask('${task.id}')" class="text-slate-600 hover:text-rose-500 p-2 transition-colors">
-                        <i class="fas fa-trash-alt text-sm"></i>
-                    </button>
+                    <span class="flex-1 text-sm ${task.completed ? 'line-through text-slate-500' : 'text-slate-100'}">${task.text}</span>
+                    <button onclick="deleteTask('${task.id}')" class="text-slate-600 hover:text-rose-500 p-2"><i class="fas fa-trash"></i></button>
                 `;
-                taskList.appendChild(item);
+                taskList.appendChild(div);
             });
-            taskCount.textContent = `${tasks.filter(t => !t.completed).length} נותרו`;
         }
 
-        // Global key listeners
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && document.activeElement.id === 'task-input') addTask();
-        });
+        function renderNearby(users) {
+            nearbyList.innerHTML = users.length ? '' : '<p class="text-slate-500 text-xs text-center py-4">אין אנשים קרובים כרגע...</p>';
+            users.forEach(u => {
+                const div = document.createElement('div');
+                div.className = "flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5";
+                div.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-[10px] font-bold">${u.name[0]}</div>
+                        <div>
+                            <p class="text-xs font-bold text-white">${u.name}</p>
+                            <p class="text-[9px] text-slate-500">פעיל כעת</p>
+                        </div>
+                    </div>
+                    <button class="text-indigo-400 text-xs font-bold hover:underline">צור קבוצה</button>
+                `;
+                nearbyList.appendChild(div);
+            });
+        }
 
-        // Initialize
+        // --- Navigation ---
+        window.switchTab = (tab) => {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('tab-active'));
+            document.getElementById(`tab-${tab}`).classList.add('tab-active');
+            document.getElementById('section-personal').style.display = tab === 'personal' ? 'block' : 'none';
+            document.getElementById('section-social').style.display = tab === 'social' ? 'block' : 'none';
+        };
+
+        // --- Clock & Init ---
+        setInterval(() => {
+            const now = new Date();
+            document.getElementById('clock').textContent = now.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+        }, 1000);
+
         init();
     </script>
 </head>
-<body class="min-h-screen">
+<body>
 
-    <!-- Loading Screen -->
+    <!-- Loader -->
     <div id="loader">
-        <div class="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin shadow-[0_0_15px_rgba(99,102,241,0.5)]"></div>
-        <p class="text-indigo-400 font-bold pulse uppercase tracking-widest text-sm">מזהה מכשיר...</p>
+        <div class="w-14 h-14 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+        <p class="text-indigo-400 font-bold animate-pulse">מסנכרן EaseSync Pro Max...</p>
     </div>
 
-    <!-- Background -->
-    <div class="fixed inset-0 pointer-events-none z-0 overflow-hidden">
-        <div class="absolute top-0 right-0 w-[600px] h-[600px] bg-indigo-600/10 blur-[120px] rounded-full"></div>
-        <div class="absolute bottom-0 left-0 w-[600px] h-[600px] bg-purple-600/10 blur-[120px] rounded-full"></div>
-    </div>
-
-    <div class="relative z-10 flex flex-col min-h-screen">
-        <!-- Top Bar -->
-        <header class="p-6 md:px-12 flex flex-col md:flex-row items-center justify-between border-b border-white/5 bg-black/40 backdrop-blur-xl">
+    <div class="relative flex flex-col min-h-screen">
+        <!-- Header -->
+        <header class="p-6 md:px-12 flex flex-col md:flex-row items-center justify-between border-b border-white/5 glass sticky top-0 z-50">
             <div class="flex items-center gap-5">
-                <div class="w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-2xl shadow-indigo-500/20">
-                    <i class="fas fa-fingerprint text-white text-2xl"></i>
+                <div class="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-xl shadow-indigo-500/20">
+                    <i class="fas fa-fingerprint text-white text-xl"></i>
                 </div>
                 <div>
-                    <h1 class="text-3xl font-black italic tracking-tighter text-white">LifeLift <span class="text-indigo-500">PRO MAX</span></h1>
-                    <div id="sync-label" class="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mt-1 flex items-center gap-1">
-                        <i class="fas fa-circle-notch animate-spin text-[8px]"></i>
-                        מתחבר...
+                    <h1 class="text-2xl font-black italic tracking-tighter text-white">LifeLift <span class="text-indigo-500">PRO MAX</span></h1>
+                    <div id="sync-label" class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">
+                        מזהה מכשיר...
                     </div>
                 </div>
             </div>
-            
-            <div class="mt-6 md:mt-0 flex items-center gap-8">
-                <div class="text-left">
-                    <div id="clock" class="text-2xl font-black text-white tabular-nums">00:00</div>
-                    <div class="text-[9px] text-slate-500 font-mono">DEV_ID: <span id="device-id" class="text-indigo-400">...</span></div>
+
+            <div class="mt-4 md:mt-0 flex items-center gap-6">
+                <div class="text-left hidden sm:block">
+                    <div id="clock" class="text-xl font-black text-white">00:00</div>
+                    <div class="text-[9px] text-slate-500 font-mono">DEVICE: <span id="device-id" class="text-indigo-400">...</span></div>
                 </div>
             </div>
         </header>
 
-        <!-- Main Content -->
-        <main class="flex-1 p-6 md:p-12 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-10">
+        <!-- Navigation Tabs -->
+        <div class="flex justify-center border-b border-white/5 bg-black/20">
+            <button id="tab-personal" onclick="switchTab('personal')" class="tab-btn tab-active px-8 py-4 text-sm font-bold flex items-center gap-2 transition-all">
+                <i class="fas fa-user"></i> אישי
+            </button>
+            <button id="tab-social" onclick="switchTab('social')" class="tab-btn px-8 py-4 text-sm font-bold flex items-center gap-2 transition-all">
+                <i class="fas fa-users"></i> חברתי
+            </button>
+        </div>
+
+        <main class="flex-1 p-6 md:p-10 max-w-6xl mx-auto w-full">
             
-            <!-- Tasks Column -->
-            <div class="lg:col-span-8 space-y-8">
-                <section class="glass rounded-[2.5rem] p-8 md:p-10">
-                    <div class="flex items-center justify-between mb-10">
-                        <div class="flex items-center gap-4">
-                            <i class="fas fa-layer-group text-indigo-500 text-2xl"></i>
-                            <h2 class="text-2xl font-black text-white">המשימות שלי</h2>
+            <!-- Section: Personal -->
+            <div id="section-personal" class="grid grid-cols-1 lg:grid-cols-12 gap-10 animate-in fade-in duration-500">
+                <div class="lg:col-span-7 space-y-6">
+                    <section class="glass rounded-[2rem] p-8">
+                        <h2 class="text-xl font-black text-white mb-6 flex items-center gap-3">
+                            <i class="fas fa-check-double text-indigo-500"></i> משימות שלי
+                        </h2>
+                        <div class="relative mb-6 group">
+                            <input type="text" id="task-input" placeholder="להוסיף משהו שיקל עליך..." 
+                                onkeydown="if(event.key==='Enter') addTask()"
+                                class="w-full bg-black/40 border border-white/10 rounded-2xl py-4 pr-12 pl-4 focus:ring-2 focus:ring-indigo-500/50 outline-none text-sm transition-all text-white">
+                            <i class="fas fa-plus absolute right-5 top-1/2 -translate-y-1/2 text-slate-600 group-focus-within:text-indigo-400"></i>
                         </div>
-                        <div id="task-count" class="px-5 py-2 bg-indigo-500/10 text-indigo-400 rounded-full text-xs font-black border border-indigo-500/20">
-                            טוען...
+                        <div id="task-list" class="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
+                            <!-- Tasks -->
                         </div>
-                    </div>
+                    </section>
+                </div>
 
-                    <div class="relative mb-10 group">
-                        <input type="text" id="task-input" placeholder="מה המשימה הבאה?" 
-                            class="w-full bg-black/40 border border-white/10 rounded-[1.5rem] py-5 pr-14 pl-6 focus:ring-2 focus:ring-indigo-500/50 outline-none text-lg transition-all text-white placeholder:text-slate-600">
-                        <i class="fas fa-plus absolute right-6 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors"></i>
-                        <button onclick="addTask()" class="absolute left-3 top-1/2 -translate-y-1/2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-xl text-sm font-bold transition-all shadow-lg shadow-indigo-600/20 active:scale-95">
-                            הוסף
-                        </button>
-                    </div>
+                <div class="lg:col-span-5 space-y-8">
+                    <section class="bg-gradient-to-br from-indigo-600 to-purple-600 rounded-[2rem] p-8 text-center shadow-2xl">
+                        <h3 class="text-indigo-100 text-[10px] font-black uppercase tracking-widest mb-3">Focus Timer</h3>
+                        <div id="timer-display" class="text-6xl font-black text-white mb-6">25:00</div>
+                        <button onclick="alert('בפיתוח...')" class="w-full bg-white text-indigo-900 py-3 rounded-xl font-black shadow-lg">התחל ריכוז</button>
+                    </section>
+                    
+                    <section class="glass rounded-[2rem] p-6">
+                        <h3 class="font-black mb-4 flex items-center gap-3"><i class="fas fa-sticky-note text-amber-500"></i> פתקים חכמים</h3>
+                        <textarea id="notes-area" oninput="saveNotes()" class="w-full h-40 bg-black/20 border border-white/5 rounded-2xl p-4 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-indigo-500/30 text-slate-300" placeholder="המחשבות שלך נשמרות כאן..."></textarea>
+                    </section>
+                </div>
+            </div>
 
-                    <div id="task-list" class="space-y-4 max-h-[600px] overflow-y-auto custom-scrollbar pr-2">
-                        <!-- Tasks go here -->
+            <!-- Section: Social -->
+            <div id="section-social" style="display: none;" class="max-w-2xl mx-auto space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+                <section class="glass rounded-[2rem] p-8">
+                    <div class="text-center mb-8">
+                        <div class="w-16 h-16 bg-indigo-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <i class="fas fa-map-marker-alt text-indigo-500 text-2xl animate-bounce"></i>
+                        </div>
+                        <h2 class="text-2xl font-black text-white">אנשים בקרבת מקום</h2>
+                        <p class="text-slate-500 text-sm">המיקום שלך משותף רק כשאתה בלשונית זו.</p>
+                    </div>
+                    
+                    <div id="nearby-list" class="space-y-4">
+                        <!-- Nearby Users -->
                     </div>
                 </section>
             </div>
 
-            <!-- Side Widgets -->
-            <div class="lg:col-span-4 space-y-8">
-                
-                <!-- Focus Timer -->
-                <section class="bg-gradient-to-br from-indigo-600 to-indigo-800 rounded-[2.5rem] p-8 text-center shadow-2xl shadow-indigo-500/20 relative overflow-hidden group">
-                    <div class="absolute top-0 left-0 w-full h-full bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                    <h3 class="text-indigo-200 text-[10px] font-black uppercase tracking-[0.3em] mb-4 relative z-10">Deep Work Mode</h3>
-                    <div id="timer-display" class="text-7xl font-black text-white tabular-nums mb-8 tracking-tighter relative z-10">25:00</div>
-                    <div class="flex gap-4 relative z-10">
-                        <button id="timer-toggle" onclick="toggleTimer()" class="flex-1 bg-white text-indigo-900 py-4 rounded-2xl font-black hover:scale-[1.02] active:scale-95 transition-all shadow-xl">
-                            התחל
-                        </button>
-                        <button onclick="resetTimer()" class="p-4 bg-black/20 text-white rounded-2xl hover:bg-black/30 transition-all active:scale-90">
-                            <i class="fas fa-redo"></i>
-                        </button>
-                    </div>
-                </section>
-
-                <!-- Quick Notes -->
-                <section class="glass rounded-[2.5rem] p-8">
-                    <div class="flex items-center gap-3 mb-6">
-                        <i class="fas fa-pen-nib text-amber-500"></i>
-                        <h3 class="font-black text-white">פתקים (Auto-Save)</h3>
-                    </div>
-                    <textarea id="notes-area" oninput="saveNotes()" 
-                        class="w-full h-56 bg-black/20 border border-white/5 rounded-2xl p-6 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-indigo-500/30 leading-relaxed text-slate-300 custom-scrollbar"
-                        placeholder="תובנות, רעיונות או סתם מחשבות..."></textarea>
-                    <div class="mt-4 flex items-center gap-2 text-[9px] text-slate-500 uppercase font-bold">
-                        <i class="fas fa-lock text-emerald-500"></i>
-                        רק המכשיר הזה יכול לקרוא
-                    </div>
-                </section>
-
-            </div>
         </main>
     </div>
 
-    <script>
-        // Clock
-        function updateClock() {
-            const now = new Date();
-            const clock = document.getElementById('clock');
-            if (clock) clock.textContent = now.getHours().toString().padStart(2,'0') + ":" + now.getMinutes().toString().padStart(2,'0');
-        }
-        setInterval(updateClock, 1000);
-        updateClock();
-
-        // Timer Logic
-        let timerSeconds = 25 * 60;
-        let timerInterval = null;
-        
-        window.toggleTimer = () => {
-            const btn = document.getElementById('timer-toggle');
-            if (timerInterval) {
-                clearInterval(timerInterval);
-                timerInterval = null;
-                btn.textContent = 'המשך';
-            } else {
-                btn.textContent = 'עצור';
-                timerInterval = setInterval(() => {
-                    if (timerSeconds > 0) {
-                        timerSeconds--;
-                        const m = Math.floor(timerSeconds/60).toString().padStart(2,'0');
-                        const s = (timerSeconds%60).toString().padStart(2,'0');
-                        document.getElementById('timer-display').textContent = `${m}:${s}`;
-                    } else {
-                        clearInterval(timerInterval);
-                        timerInterval = null;
-                        alert("זמן הפוקוס נגמר!");
-                    }
-                }, 1000);
-            }
-        };
-
-        window.resetTimer = () => {
-            clearInterval(timerInterval);
-            timerInterval = null;
-            timerSeconds = 25 * 60;
-            document.getElementById('timer-display').textContent = "25:00";
-            document.getElementById('timer-toggle').textContent = "התחל";
-        };
-    </script>
 </body>
 </html>
