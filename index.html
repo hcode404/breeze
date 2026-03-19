@@ -31,20 +31,6 @@
             box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
         }
 
-        .neon-border {
-            position: relative;
-        }
-
-        .neon-border::after {
-            content: '';
-            position: absolute;
-            inset: -1px;
-            background: linear-gradient(45deg, var(--primary), var(--secondary));
-            z-index: -1;
-            border-radius: inherit;
-            opacity: 0.3;
-        }
-
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 10px; }
@@ -84,17 +70,19 @@
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, collection, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Configuration
-        const firebaseConfig = window.__firebase_config ? JSON.parse(window.__firebase_config) : {};
+        // Configuration check and initialization
+        const getFirebaseConfig = () => {
+            try {
+                return window.__firebase_config ? JSON.parse(window.__firebase_config) : null;
+            } catch (e) {
+                return null;
+            }
+        };
+
+        const firebaseConfig = getFirebaseConfig();
         const appId = window.__app_id || 'lifelift-ease-sync';
         const initialAuthToken = window.__initial_auth_token;
         
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-
-        let currentUser = null;
-
         // UI Refs
         const taskList = document.getElementById('task-list');
         const taskCount = document.getElementById('task-count');
@@ -110,10 +98,31 @@
             }
         };
 
+        let app, auth, db, currentUser = null;
+
         async function init() {
+            // Safety timeout to remove loader if things take too long
+            const failsafe = setTimeout(() => {
+                if (!currentUser) {
+                    syncLabel.innerHTML = '<span class="text-amber-500">החיבור מתעכב... נסה לרענן</span>';
+                    removeLoader();
+                }
+            }, 8000);
+
+            if (!firebaseConfig || !firebaseConfig.apiKey) {
+                console.error("Firebase config missing");
+                syncLabel.innerHTML = '<span class="text-rose-500">חסרות הגדרות מערכת</span>';
+                removeLoader();
+                return;
+            }
+
             try {
-                // Priority for Custom Token over Anonymous
-                if (initialAuthToken) {
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                // Priority for Custom Token (Rule 3)
+                if (initialAuthToken && initialAuthToken !== "undefined") {
                     await signInWithCustomToken(auth, initialAuthToken);
                 } else {
                     await signInAnonymously(auth);
@@ -121,24 +130,22 @@
 
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
+                        clearTimeout(failsafe);
                         currentUser = user;
                         deviceIdDisplay.textContent = user.uid.slice(0, 12);
                         setupSubscriptions();
-                        setTimeout(removeLoader, 800);
-                    } else {
-                        // If user is null but auth is initialized, we might be in a logout state
-                        syncLabel.textContent = "ממתין להתחברות...";
+                        removeLoader();
                     }
                 });
             } catch (err) {
-                console.error("Connection error", err);
-                syncLabel.innerHTML = '<span class="text-rose-500">שגיאת חיבור לענן</span>';
-                setTimeout(removeLoader, 2000); // Remove loader even on error so user can see the status
+                console.error("Initialization error:", err);
+                syncLabel.innerHTML = '<span class="text-rose-500">שגיאה בחיבור לענן</span>';
+                removeLoader();
             }
         }
 
         function setupSubscriptions() {
-            if (!currentUser) return;
+            if (!currentUser || !db) return;
 
             // Subscribe to Tasks
             const tasksRef = collection(db, 'artifacts', appId, 'users', currentUser.uid, 'tasks');
@@ -165,7 +172,7 @@
         window.addTask = async () => {
             const input = document.getElementById('task-input');
             const val = input.value.trim();
-            if (!val || !currentUser) return;
+            if (!val || !currentUser || !db) return;
 
             const taskId = Date.now().toString();
             try {
@@ -181,7 +188,7 @@
         };
 
         window.toggleTask = async (id, status) => {
-            if (!currentUser) return;
+            if (!currentUser || !db) return;
             try {
                 await updateDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'tasks', id), {
                     completed: !status
@@ -192,7 +199,7 @@
         };
 
         window.deleteTask = async (id) => {
-            if (!currentUser) return;
+            if (!currentUser || !db) return;
             try {
                 await deleteDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'tasks', id));
             } catch (err) {
@@ -201,12 +208,12 @@
         };
 
         window.saveNotes = async () => {
-            if (!currentUser) return;
+            if (!currentUser || !db) return;
             try {
                 await setDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'data', 'notes'), {
                     content: notesArea.value,
                     updatedAt: Date.now()
-                });
+                }, { merge: true });
             } catch (err) {
                 console.error("Failed to save notes:", err);
             }
@@ -236,8 +243,8 @@
             if (e.key === 'Enter' && document.activeElement.id === 'task-input') addTask();
         });
 
-        // Initialize on window load
-        window.addEventListener('load', init);
+        // Initialize
+        init();
     </script>
 </head>
 <body class="min-h-screen">
