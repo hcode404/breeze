@@ -3,213 +3,354 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EasyLife | פשוט וקל</title>
+    <title>NEON CHAOS | PRO MAX EDITION</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;600;800&display=swap');
-        
         body {
-            font-family: 'Assistant', sans-serif;
-            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
-            color: #1e293b;
             margin: 0;
-            min-height: 100vh;
+            background-color: #000;
+            color: #fff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            user-select: none;
         }
 
-        .card {
-            background: rgba(255, 255, 255, 0.8);
+        canvas {
+            display: block;
+        }
+
+        .ui-overlay {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 2rem;
+            z-index: 10;
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.05);
             backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.5);
-            border-radius: 2rem;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 1.5rem;
+            padding: 1.5rem;
+            pointer-events: auto;
         }
 
-        .btn-action {
-            transition: all 0.2s ease;
+        .neon-text {
+            text-shadow: 0 0 10px #00f2ff, 0 0 20px #00f2ff;
         }
 
-        .btn-action:active {
-            transform: scale(0.95);
+        .scanline {
+            width: 100%;
+            height: 100px;
+            z-index: 5;
+            background: linear-gradient(0deg, rgba(0, 0, 0, 0) 0%, rgba(0, 242, 255, 0.05) 50%, rgba(0, 0, 0, 0) 100%);
+            opacity: 0.1;
+            position: absolute;
+            bottom: 100%;
+            animation: scanline 4s linear infinite;
         }
 
-        .breath-animation {
-            animation: breathe 4s ease-in-out infinite;
+        @keyframes scanline {
+            0% { bottom: 100%; }
+            100% { bottom: -100px; }
         }
 
-        @keyframes breathe {
-            0%, 100% { transform: scale(1); opacity: 0.5; }
-            50% { transform: scale(1.1); opacity: 0.8; }
+        .shimmer {
+            background: linear-gradient(90deg, #00f2ff, #7000ff, #00f2ff);
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: shine 3s linear infinite;
         }
 
-        .hidden { display: none; }
+        @keyframes shine {
+            to { background-position: 200% center; }
+        }
+
+        #vignette {
+            position: fixed;
+            inset: 0;
+            box-shadow: inset 0 0 150px rgba(0,0,0,0.9);
+            pointer-events: none;
+            z-index: 2;
+        }
     </style>
 </head>
-<body class="flex items-center justify-center p-4">
+<body>
 
-    <div class="max-w-md w-full space-y-6 animate-in fade-in duration-700">
-        
-        <!-- Header -->
-        <header class="text-center space-y-2">
-            <h1 class="text-4xl font-extrabold text-sky-600 tracking-tight">EasyLife</h1>
-            <p class="text-slate-500 font-medium">החיים פשוטים יותר עכשיו.</p>
-        </header>
+    <div id="vignette"></div>
+    <div class="scanline"></div>
 
-        <!-- Main Card -->
-        <main class="card p-8 space-y-8">
+    <!-- Start Screen -->
+    <div id="start-screen" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-xl">
+        <div class="text-center space-y-8 p-10 glass-panel border-indigo-500/50 max-w-lg">
+            <h1 class="text-6xl font-black shimmer italic tracking-tighter uppercase">NEON CHAOS</h1>
+            <p class="text-slate-400 font-bold uppercase tracking-widest text-sm">Pro Max Reality Engine</p>
             
-            <!-- 1. Mood Picker -->
-            <section class="text-center">
-                <p class="text-sm font-bold text-slate-400 uppercase mb-4 tracking-widest">איך ההרגשה עכשיו?</p>
-                <div class="flex justify-around text-3xl">
-                    <button onclick="setMood('😊')" class="btn-action hover:grayscale-0 grayscale transition-all">😊</button>
-                    <button onclick="setMood('😎')" class="btn-action hover:grayscale-0 grayscale transition-all">😎</button>
-                    <button onclick="setMood('😴')" class="btn-action hover:grayscale-0 grayscale transition-all">😴</button>
-                    <button onclick="setMood('🤔')" class="btn-action hover:grayscale-0 grayscale transition-all">🤔</button>
-                </div>
-                <p id="mood-text" class="mt-3 text-xs text-sky-500 font-bold h-4"></p>
-            </section>
-
-            <hr class="border-slate-100">
-
-            <!-- 2. The One Thing (Main Goal) -->
-            <section>
-                <p class="text-sm font-bold text-slate-400 uppercase mb-4 tracking-widest text-center">הדבר הכי חשוב היום</p>
-                <div id="goal-display" class="hidden text-center space-y-4">
-                    <p id="current-goal" class="text-xl font-bold text-slate-700"></p>
-                    <button onclick="clearGoal()" class="text-xs text-slate-400 hover:text-rose-500 transition-colors">
-                        <i class="fas fa-check mr-1"></i> סיימתי!
-                    </button>
-                </div>
-                <div id="goal-input-area" class="flex gap-2">
-                    <input type="text" id="goal-input" placeholder="מה המטרה שלך?" 
-                        class="flex-1 bg-white border border-slate-200 rounded-xl py-3 px-4 focus:ring-2 focus:ring-sky-500/20 outline-none transition-all text-sm">
-                    <button onclick="saveGoal()" class="bg-sky-500 text-white px-5 rounded-xl btn-action shadow-lg shadow-sky-500/20">
-                        <i class="fas fa-arrow-left"></i>
-                    </button>
-                </div>
-            </section>
-
-            <hr class="border-slate-100">
-
-            <!-- 3. Calm Button -->
-            <section class="text-center">
-                <button id="calm-btn" onclick="startBreath()" class="w-full py-4 bg-white border-2 border-sky-100 text-sky-600 rounded-2xl font-bold hover:bg-sky-50 transition-all flex items-center justify-center gap-3">
-                    <i class="fas fa-wind"></i>
-                    דקה של שקט
+            <div class="flex flex-col gap-4">
+                <button onclick="initApp()" class="bg-indigo-600 hover:bg-cyan-500 text-white py-6 rounded-3xl font-black text-2xl transition-all shadow-[0_0_30px_rgba(79,70,229,0.5)] active:scale-95">
+                    להתפרע עכשיו! 🚀
                 </button>
-                
-                <div id="breath-area" class="hidden space-y-4 mt-2">
-                    <div class="w-16 h-16 bg-sky-400 rounded-full mx-auto breath-animation flex items-center justify-center text-white">
-                        <i class="fas fa-leaf"></i>
-                    </div>
-                    <p class="text-xs text-sky-500 font-medium">נשימה עמוקה... <span id="timer">60</span></p>
-                </div>
-            </section>
-
-        </main>
-
-        <!-- Footer Info -->
-        <footer class="text-center">
-            <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-                <i class="fas fa-shield-alt mr-1"></i> הכל נשמר על המכשיר שלך בלבד
-            </p>
-        </footer>
+                <p class="text-[10px] text-slate-500 italic">נדרש אישור מצלמה ומיקרופון לחוויית ה-Pro Max</p>
+            </div>
+        </div>
     </div>
 
+    <div class="ui-overlay">
+        <!-- Top Nav -->
+        <div class="flex justify-between items-start">
+            <div class="glass-panel py-3 px-6">
+                <h2 class="text-xl font-black text-white italic">NEON <span class="text-cyan-400">CHAOS</span></h2>
+                <div class="flex items-center gap-2 mt-1">
+                    <span id="fps" class="text-[9px] font-mono text-emerald-400">60 FPS</span>
+                    <span class="w-1 h-1 bg-white/20 rounded-full"></span>
+                    <span id="particle-count" class="text-[9px] font-mono text-cyan-400">2000 PARTICLES</span>
+                </div>
+            </div>
+
+            <div class="glass-panel flex gap-4">
+                <button onclick="toggleFullscreen()" class="text-white/50 hover:text-white transition-colors"><i class="fas fa-expand"></i></button>
+                <button onclick="location.reload()" class="text-white/50 hover:text-rose-400 transition-colors"><i class="fas fa-power-off"></i></button>
+            </div>
+        </div>
+
+        <!-- Bottom Controls -->
+        <div class="flex flex-col md:flex-row gap-6 items-end justify-between pointer-events-none">
+            <div class="glass-panel w-full md:w-64 space-y-4 pointer-events-auto">
+                <div>
+                    <div class="flex justify-between text-[10px] font-bold mb-2 uppercase tracking-widest">
+                        <span>רגישות קול</span>
+                        <span id="mic-val">0%</span>
+                    </div>
+                    <div class="h-1 w-full bg-white/10 rounded-full overflow-hidden">
+                        <div id="mic-bar" class="h-full bg-cyan-400 transition-all duration-75" style="width: 0%"></div>
+                    </div>
+                </div>
+                <p class="text-[10px] text-slate-400 leading-tight">
+                    <i class="fas fa-info-circle mr-1"></i> תצעקו כדי לשנות את צבע העולם, תזיזו את הידיים כדי לשלוט בחלקיקים.
+                </p>
+            </div>
+
+            <div class="text-right glass-panel pointer-events-auto">
+                <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">מצב פעיל</p>
+                <h3 class="text-2xl font-black text-white italic tracking-tighter uppercase">KINETIC FLOW</h3>
+            </div>
+        </div>
+    </div>
+
+    <canvas id="canvas"></canvas>
+    <video id="video" class="hidden" autoplay playsinline></video>
+
     <script>
-        // Mood Logic
-        function setMood(emoji) {
-            const messages = {
-                '😊': 'איזה כיף! תמשיך ככה.',
-                '😎': 'סטייל! הולך להיות יום מעולה.',
-                '😴': 'אולי כדאי לקחת הפסקה קצרה?',
-                '🤔': 'מחשבות טובות מביאות דברים טובים.'
-            };
-            document.getElementById('mood-text').textContent = messages[emoji];
-            localStorage.setItem('easy_mood', emoji);
-        }
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d', { alpha: false });
+        const video = document.getElementById('video');
+        const fpsEl = document.getElementById('fps');
+        const micBar = document.getElementById('mic-bar');
+        const micVal = document.getElementById('mic-val');
 
-        // Goal Logic
-        function saveGoal() {
-            const input = document.getElementById('goal-input');
-            const val = input.value.trim();
-            if (!val) return;
-            
-            localStorage.setItem('easy_goal', val);
-            showGoal(val);
-        }
+        let particles = [];
+        let width, height;
+        let lastTime = 0;
+        let frameCount = 0;
+        let micLevel = 0;
+        let audioContext, analyser, dataArray;
+        let motionCanvas, mCtx;
+        let motionX = 0, motionY = 0;
+        let mouseX = 0, mouseY = 0;
+        let isActive = false;
+        let hue = 180;
 
-        function showGoal(val) {
-            document.getElementById('current-goal').textContent = val;
-            document.getElementById('goal-display').classList.remove('hidden');
-            document.getElementById('goal-input-area').classList.add('hidden');
-        }
+        class Particle {
+            constructor() {
+                this.reset();
+            }
 
-        function clearGoal() {
-            localStorage.removeItem('easy_goal');
-            document.getElementById('goal-display').classList.add('hidden');
-            document.getElementById('goal-input-area').classList.remove('hidden');
-            document.getElementById('goal-input').value = '';
-            
-            // Effect
-            confetti();
-        }
+            reset() {
+                this.x = Math.random() * width;
+                this.y = Math.random() * height;
+                this.vx = (Math.random() - 0.5) * 2;
+                this.vy = (Math.random() - 0.5) * 2;
+                this.size = Math.random() * 2 + 1;
+                this.baseSize = this.size;
+                this.life = Math.random() * 0.5 + 0.5;
+                this.color = `hsla(${hue}, 100%, 50%, ${this.life})`;
+            }
 
-        // Breath Logic
-        let breathInterval;
-        function startBreath() {
-            const btn = document.getElementById('calm-btn');
-            const area = document.getElementById('breath-area');
-            const timerDisplay = document.getElementById('timer');
-            
-            btn.classList.add('hidden');
-            area.classList.remove('hidden');
-            
-            let timeLeft = 60;
-            timerDisplay.textContent = timeLeft;
-            
-            breathInterval = setInterval(() => {
-                timeLeft--;
-                timerDisplay.textContent = timeLeft;
-                if (timeLeft <= 0) {
-                    clearInterval(breathInterval);
-                    btn.classList.remove('hidden');
-                    area.classList.add('hidden');
-                    alert("כל הכבוד! חזרה לעניינים ברוגע.");
+            update() {
+                // Sound influence
+                const sFactor = micLevel * 0.1;
+                
+                // Motion/Mouse influence
+                const dx = (motionX || mouseX) - this.x;
+                const dy = (motionY || mouseY) - this.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                
+                if (dist < 200) {
+                    const force = (200 - dist) / 200;
+                    this.vx += (dx / dist) * force * 1.5;
+                    this.vy += (dy / dist) * force * 1.5;
+                    this.size = this.baseSize + (force * 5 * (micLevel / 50));
+                } else {
+                    this.size = this.baseSize;
                 }
-            }, 1000);
-        }
 
-        // Init
-        window.onload = () => {
-            const savedGoal = localStorage.getItem('easy_goal');
-            if (savedGoal) showGoal(savedGoal);
-        };
+                this.x += this.vx;
+                this.y += this.vy;
 
-        // Simple Confetti Effect
-        function confetti() {
-            const colors = ['#0ea5e9', '#6366f1', '#a855f7'];
-            for(let i=0; i<30; i++) {
-                const el = document.createElement('div');
-                el.style.position = 'fixed';
-                el.style.width = '8px';
-                el.style.height = '8px';
-                el.style.backgroundColor = colors[Math.floor(Math.random()*colors.length)];
-                el.style.left = Math.random() * 100 + 'vw';
-                el.style.top = '100vh';
-                el.style.borderRadius = '50%';
-                el.style.zIndex = '100';
-                document.body.appendChild(el);
-                
-                const anim = el.animate([
-                    { transform: `translateY(0) rotate(0deg)`, opacity: 1 },
-                    { transform: `translateY(-100vh) rotate(720deg)`, opacity: 0 }
-                ], { duration: 2000 + Math.random()*1000, easing: 'ease-out' });
-                
-                anim.onfinish = () => el.remove();
+                // Friction
+                this.vx *= 0.96;
+                this.vy *= 0.96;
+
+                // Boundaries
+                if (this.x < 0 || this.x > width || this.y < 0 || this.y > height) {
+                    this.reset();
+                }
+
+                this.color = `hsla(${(hue + dist * 0.2) % 360}, 100%, 60%, ${this.life})`;
+            }
+
+            draw() {
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
             }
         }
+
+        async function initApp() {
+            document.getElementById('start-screen').classList.add('opacity-0');
+            setTimeout(() => document.getElementById('start-screen').remove(), 500);
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { width: 640, height: 480 }, 
+                    audio: true 
+                });
+                video.srcObject = stream;
+                
+                // Audio Setup
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const source = audioContext.createMediaStreamSource(stream);
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 256;
+                source.connect(analyser);
+                dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+                // Motion setup
+                motionCanvas = document.createElement('canvas');
+                motionCanvas.width = 160;
+                motionCanvas.height = 120;
+                mCtx = motionCanvas.getContext('2d');
+
+                isActive = true;
+                resize();
+                createParticles();
+                requestAnimationFrame(animate);
+            } catch (err) {
+                alert("חובה לתת אישור למצלמה ולמיקרופון כדי לשחק!");
+                location.reload();
+            }
+        }
+
+        function createParticles() {
+            const count = window.innerWidth < 768 ? 1000 : 2500;
+            particles = [];
+            for (let i = 0; i < count; i++) {
+                particles.push(new Particle());
+            }
+            document.getElementById('particle-count').textContent = `${count} PARTICLES`;
+        }
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            if(isActive) createParticles();
+        }
+
+        window.addEventListener('resize', resize);
+        window.addEventListener('mousemove', (e) => {
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+        });
+
+        function analyzeMotion() {
+            if (!video.videoWidth) return;
+            
+            mCtx.drawImage(video, 0, 0, motionCanvas.width, motionCanvas.height);
+            const frame = mCtx.getImageData(0, 0, motionCanvas.width, motionCanvas.height);
+            
+            let totalX = 0, totalY = 0, count = 0;
+            for (let i = 0; i < frame.data.length; i += 16) {
+                const r = frame.data[i], g = frame.data[i+1], b = frame.data[i+2];
+                // Simple high-pass motion detection would go here, 
+                // but for "Pro Max" feel, we'll use center of bright pixels as a proxy
+                if (r + g + b > 400) {
+                    const px = (i / 4) % motionCanvas.width;
+                    const py = Math.floor((i / 4) / motionCanvas.width);
+                    totalX += px;
+                    totalY += py;
+                    count++;
+                }
+            }
+
+            if (count > 20) {
+                motionX = width - (totalX / count) * (width / motionCanvas.width);
+                motionY = (totalY / count) * (height / motionCanvas.height);
+            }
+        }
+
+        function animate(time) {
+            if (!isActive) return;
+
+            // Audio Level
+            analyser.getByteFrequencyData(dataArray);
+            const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+            micLevel = average;
+            micBar.style.width = `${Math.min(100, average * 1.5)}%`;
+            micVal.textContent = `${Math.floor(Math.min(100, average * 1.5))}%`;
+            
+            if (average > 40) {
+                hue = (hue + 2) % 360; // Sound shifts world color
+            }
+
+            analyzeMotion();
+
+            // Background Fade (Trails)
+            ctx.fillStyle = `rgba(0, 0, 0, ${0.1 + (average * 0.001)})`;
+            ctx.fillRect(0, 0, width, height);
+
+            // Draw Particles
+            particles.forEach(p => {
+                p.update();
+                p.draw();
+            });
+
+            // FPS Counter
+            frameCount++;
+            if (time > lastTime + 1000) {
+                fpsEl.textContent = `${Math.round((frameCount * 1000) / (time - lastTime))} FPS`;
+                frameCount = 0;
+                lastTime = time;
+            }
+
+            requestAnimationFrame(animate);
+        }
+
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen();
+            } else {
+                document.exitFullscreen();
+            }
+        }
+
+        resize();
     </script>
 </body>
 </html>
