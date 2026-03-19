@@ -3,347 +3,213 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EaseSync Pro Max | הופכים את החיים לקלים</title>
+    <title>EasyLife | פשוט וקל</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;600;800&display=swap');
         
         body {
             font-family: 'Assistant', sans-serif;
-            background-color: #020617;
-            color: #f1f5f9;
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            color: #1e293b;
             margin: 0;
-            overflow-x: hidden;
+            min-height: 100vh;
         }
 
-        .glass {
-            background: rgba(15, 23, 42, 0.7);
-            backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+        .card {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            border-radius: 2rem;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
         }
 
-        .task-card {
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        .btn-action {
+            transition: all 0.2s ease;
         }
 
-        .task-card:hover {
-            transform: translateY(-2px);
-            background: rgba(255, 255, 255, 0.05);
+        .btn-action:active {
+            transform: scale(0.95);
         }
 
-        .custom-scrollbar::-webkit-scrollbar { width: 5px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(99, 102, 241, 0.3); border-radius: 10px; }
-
-        #loader {
-            position: fixed;
-            inset: 0;
-            background: #020617;
-            z-index: 999;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-direction: column;
-            gap: 1.5rem;
+        .breath-animation {
+            animation: breathe 4s ease-in-out infinite;
         }
 
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            display: inline-block;
+        @keyframes breathe {
+            0%, 100% { transform: scale(1); opacity: 0.5; }
+            50% { transform: scale(1.1); opacity: 0.8; }
         }
 
-        .tab-active {
-            background: rgba(99, 102, 241, 0.1);
-            color: #818cf8;
-            border-bottom: 2px solid #6366f1;
-        }
+        .hidden { display: none; }
     </style>
-
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, onSnapshot, collection, deleteDoc, updateDoc, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // Global environment variables
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'ease-sync-pro-max';
-        const initialToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-        let app, auth, db, user = null;
-        let activeTab = 'personal';
-
-        // UI Elements
-        const loader = document.getElementById('loader');
-        const syncLabel = document.getElementById('sync-label');
-        const taskList = document.getElementById('task-list');
-        const notesArea = document.getElementById('notes-area');
-        const nearbyList = document.getElementById('nearby-list');
-
-        async function init() {
-            if (!firebaseConfig.apiKey) {
-                console.warn("Firebase config missing. Running in local mode.");
-                syncLabel.innerHTML = '<span class="text-amber-500"><i class="fas fa-exclamation-triangle"></i> מצב מקומי בלבד</span>';
-                loader.style.display = 'none';
-                return;
-            }
-
-            try {
-                app = initializeApp(firebaseConfig);
-                auth = getAuth(app);
-                db = getFirestore(app);
-
-                // Authentication (Rule 3)
-                if (initialToken && initialToken !== "undefined") {
-                    await signInWithCustomToken(auth, initialToken);
-                } else {
-                    await signInAnonymously(auth);
-                }
-
-                onAuthStateChanged(auth, (u) => {
-                    if (u) {
-                        user = u;
-                        document.getElementById('device-id').textContent = u.uid.slice(0, 10);
-                        startSync();
-                        loader.style.opacity = '0';
-                        setTimeout(() => loader.style.display = 'none', 500);
-                    }
-                });
-            } catch (err) {
-                console.error("Firebase init failed:", err);
-                syncLabel.innerHTML = '<span class="text-rose-500">שגיאת חיבור לענן</span>';
-                loader.style.display = 'none';
-            }
-        }
-
-        function startSync() {
-            if (!user || !db) return;
-
-            // Sync Tasks (Private Path - Rule 1)
-            const tasksRef = collection(db, 'artifacts', appId, 'users', user.uid, 'tasks');
-            onSnapshot(tasksRef, (snapshot) => {
-                const tasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                renderTasks(tasks.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
-                syncLabel.innerHTML = '<span class="text-emerald-400"><i class="fas fa-cloud"></i> EaseSync מחובר</span>';
-            }, (err) => console.error("Sync tasks error:", err));
-
-            // Sync Notes
-            const notesRef = doc(db, 'artifacts', appId, 'users', user.uid, 'data', 'notes');
-            onSnapshot(notesRef, (docSnap) => {
-                if (docSnap.exists() && document.activeElement !== notesArea) {
-                    notesArea.value = docSnap.data().content || '';
-                }
-            });
-
-            // Start Presence & Location
-            updatePresence();
-            setInterval(updatePresence, 30000); // Every 30s
-            listenToNearby();
-        }
-
-        // --- Actions ---
-        window.addTask = async () => {
-            const input = document.getElementById('task-input');
-            if (!input.value.trim() || !user) return;
-            const taskId = Date.now().toString();
-            await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', taskId), {
-                text: input.value.trim(),
-                completed: false,
-                createdAt: Date.now()
-            });
-            input.value = '';
-        };
-
-        window.toggleTask = async (id, status) => {
-            await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', id), {
-                completed: !status
-            });
-        };
-
-        window.deleteTask = async (id) => {
-            await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', id));
-        };
-
-        window.saveNotes = async () => {
-            if (!user) return;
-            await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'data', 'notes'), {
-                content: notesArea.value,
-                updatedAt: Date.now()
-            });
-        };
-
-        // --- Presence & Social ---
-        async function updatePresence() {
-            if (!user) return;
-            navigator.geolocation.getCurrentPosition(async (pos) => {
-                const presenceRef = doc(db, 'artifacts', appId, 'public', 'data', 'presence', user.uid);
-                await setDoc(presenceRef, {
-                    uid: user.uid,
-                    lat: pos.coords.latitude,
-                    lng: pos.coords.longitude,
-                    lastSeen: Date.now(),
-                    name: `User_${user.uid.slice(0, 4)}`
-                }, { merge: true });
-            });
-        }
-
-        function listenToNearby() {
-            const presenceRef = collection(db, 'artifacts', appId, 'public', 'data', 'presence');
-            onSnapshot(presenceRef, (snapshot) => {
-                const users = snapshot.docs.map(doc => doc.data()).filter(u => u.uid !== user.uid);
-                renderNearby(users);
-            });
-        }
-
-        // --- UI Rendering ---
-        function renderTasks(tasks) {
-            taskList.innerHTML = '';
-            tasks.forEach(task => {
-                const div = document.createElement('div');
-                div.className = `task-card flex items-center gap-4 p-4 rounded-2xl border ${task.completed ? 'bg-black/20 border-white/5 opacity-50' : 'glass border-white/10'}`;
-                div.innerHTML = `
-                    <button onclick="toggleTask('${task.id}', ${task.completed})" class="text-xl">
-                        <i class="${task.completed ? 'fas fa-check-circle text-emerald-500' : 'far fa-circle text-slate-500'}"></i>
-                    </button>
-                    <span class="flex-1 text-sm ${task.completed ? 'line-through text-slate-500' : 'text-slate-100'}">${task.text}</span>
-                    <button onclick="deleteTask('${task.id}')" class="text-slate-600 hover:text-rose-500 p-2"><i class="fas fa-trash"></i></button>
-                `;
-                taskList.appendChild(div);
-            });
-        }
-
-        function renderNearby(users) {
-            nearbyList.innerHTML = users.length ? '' : '<p class="text-slate-500 text-xs text-center py-4">אין אנשים קרובים כרגע...</p>';
-            users.forEach(u => {
-                const div = document.createElement('div');
-                div.className = "flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5";
-                div.innerHTML = `
-                    <div class="flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-[10px] font-bold">${u.name[0]}</div>
-                        <div>
-                            <p class="text-xs font-bold text-white">${u.name}</p>
-                            <p class="text-[9px] text-slate-500">פעיל כעת</p>
-                        </div>
-                    </div>
-                    <button class="text-indigo-400 text-xs font-bold hover:underline">צור קבוצה</button>
-                `;
-                nearbyList.appendChild(div);
-            });
-        }
-
-        // --- Navigation ---
-        window.switchTab = (tab) => {
-            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('tab-active'));
-            document.getElementById(`tab-${tab}`).classList.add('tab-active');
-            document.getElementById('section-personal').style.display = tab === 'personal' ? 'block' : 'none';
-            document.getElementById('section-social').style.display = tab === 'social' ? 'block' : 'none';
-        };
-
-        // --- Clock & Init ---
-        setInterval(() => {
-            const now = new Date();
-            document.getElementById('clock').textContent = now.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
-        }, 1000);
-
-        init();
-    </script>
 </head>
-<body>
+<body class="flex items-center justify-center p-4">
 
-    <!-- Loader -->
-    <div id="loader">
-        <div class="w-14 h-14 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-        <p class="text-indigo-400 font-bold animate-pulse">מסנכרן EaseSync Pro Max...</p>
-    </div>
-
-    <div class="relative flex flex-col min-h-screen">
+    <div class="max-w-md w-full space-y-6 animate-in fade-in duration-700">
+        
         <!-- Header -->
-        <header class="p-6 md:px-12 flex flex-col md:flex-row items-center justify-between border-b border-white/5 glass sticky top-0 z-50">
-            <div class="flex items-center gap-5">
-                <div class="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-xl shadow-indigo-500/20">
-                    <i class="fas fa-fingerprint text-white text-xl"></i>
-                </div>
-                <div>
-                    <h1 class="text-2xl font-black italic tracking-tighter text-white">LifeLift <span class="text-indigo-500">PRO MAX</span></h1>
-                    <div id="sync-label" class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">
-                        מזהה מכשיר...
-                    </div>
-                </div>
-            </div>
-
-            <div class="mt-4 md:mt-0 flex items-center gap-6">
-                <div class="text-left hidden sm:block">
-                    <div id="clock" class="text-xl font-black text-white">00:00</div>
-                    <div class="text-[9px] text-slate-500 font-mono">DEVICE: <span id="device-id" class="text-indigo-400">...</span></div>
-                </div>
-            </div>
+        <header class="text-center space-y-2">
+            <h1 class="text-4xl font-extrabold text-sky-600 tracking-tight">EasyLife</h1>
+            <p class="text-slate-500 font-medium">החיים פשוטים יותר עכשיו.</p>
         </header>
 
-        <!-- Navigation Tabs -->
-        <div class="flex justify-center border-b border-white/5 bg-black/20">
-            <button id="tab-personal" onclick="switchTab('personal')" class="tab-btn tab-active px-8 py-4 text-sm font-bold flex items-center gap-2 transition-all">
-                <i class="fas fa-user"></i> אישי
-            </button>
-            <button id="tab-social" onclick="switchTab('social')" class="tab-btn px-8 py-4 text-sm font-bold flex items-center gap-2 transition-all">
-                <i class="fas fa-users"></i> חברתי
-            </button>
-        </div>
-
-        <main class="flex-1 p-6 md:p-10 max-w-6xl mx-auto w-full">
+        <!-- Main Card -->
+        <main class="card p-8 space-y-8">
             
-            <!-- Section: Personal -->
-            <div id="section-personal" class="grid grid-cols-1 lg:grid-cols-12 gap-10 animate-in fade-in duration-500">
-                <div class="lg:col-span-7 space-y-6">
-                    <section class="glass rounded-[2rem] p-8">
-                        <h2 class="text-xl font-black text-white mb-6 flex items-center gap-3">
-                            <i class="fas fa-check-double text-indigo-500"></i> משימות שלי
-                        </h2>
-                        <div class="relative mb-6 group">
-                            <input type="text" id="task-input" placeholder="להוסיף משהו שיקל עליך..." 
-                                onkeydown="if(event.key==='Enter') addTask()"
-                                class="w-full bg-black/40 border border-white/10 rounded-2xl py-4 pr-12 pl-4 focus:ring-2 focus:ring-indigo-500/50 outline-none text-sm transition-all text-white">
-                            <i class="fas fa-plus absolute right-5 top-1/2 -translate-y-1/2 text-slate-600 group-focus-within:text-indigo-400"></i>
-                        </div>
-                        <div id="task-list" class="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
-                            <!-- Tasks -->
-                        </div>
-                    </section>
+            <!-- 1. Mood Picker -->
+            <section class="text-center">
+                <p class="text-sm font-bold text-slate-400 uppercase mb-4 tracking-widest">איך ההרגשה עכשיו?</p>
+                <div class="flex justify-around text-3xl">
+                    <button onclick="setMood('😊')" class="btn-action hover:grayscale-0 grayscale transition-all">😊</button>
+                    <button onclick="setMood('😎')" class="btn-action hover:grayscale-0 grayscale transition-all">😎</button>
+                    <button onclick="setMood('😴')" class="btn-action hover:grayscale-0 grayscale transition-all">😴</button>
+                    <button onclick="setMood('🤔')" class="btn-action hover:grayscale-0 grayscale transition-all">🤔</button>
                 </div>
+                <p id="mood-text" class="mt-3 text-xs text-sky-500 font-bold h-4"></p>
+            </section>
 
-                <div class="lg:col-span-5 space-y-8">
-                    <section class="bg-gradient-to-br from-indigo-600 to-purple-600 rounded-[2rem] p-8 text-center shadow-2xl">
-                        <h3 class="text-indigo-100 text-[10px] font-black uppercase tracking-widest mb-3">Focus Timer</h3>
-                        <div id="timer-display" class="text-6xl font-black text-white mb-6">25:00</div>
-                        <button onclick="alert('בפיתוח...')" class="w-full bg-white text-indigo-900 py-3 rounded-xl font-black shadow-lg">התחל ריכוז</button>
-                    </section>
-                    
-                    <section class="glass rounded-[2rem] p-6">
-                        <h3 class="font-black mb-4 flex items-center gap-3"><i class="fas fa-sticky-note text-amber-500"></i> פתקים חכמים</h3>
-                        <textarea id="notes-area" oninput="saveNotes()" class="w-full h-40 bg-black/20 border border-white/5 rounded-2xl p-4 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-indigo-500/30 text-slate-300" placeholder="המחשבות שלך נשמרות כאן..."></textarea>
-                    </section>
+            <hr class="border-slate-100">
+
+            <!-- 2. The One Thing (Main Goal) -->
+            <section>
+                <p class="text-sm font-bold text-slate-400 uppercase mb-4 tracking-widest text-center">הדבר הכי חשוב היום</p>
+                <div id="goal-display" class="hidden text-center space-y-4">
+                    <p id="current-goal" class="text-xl font-bold text-slate-700"></p>
+                    <button onclick="clearGoal()" class="text-xs text-slate-400 hover:text-rose-500 transition-colors">
+                        <i class="fas fa-check mr-1"></i> סיימתי!
+                    </button>
                 </div>
-            </div>
+                <div id="goal-input-area" class="flex gap-2">
+                    <input type="text" id="goal-input" placeholder="מה המטרה שלך?" 
+                        class="flex-1 bg-white border border-slate-200 rounded-xl py-3 px-4 focus:ring-2 focus:ring-sky-500/20 outline-none transition-all text-sm">
+                    <button onclick="saveGoal()" class="bg-sky-500 text-white px-5 rounded-xl btn-action shadow-lg shadow-sky-500/20">
+                        <i class="fas fa-arrow-left"></i>
+                    </button>
+                </div>
+            </section>
 
-            <!-- Section: Social -->
-            <div id="section-social" style="display: none;" class="max-w-2xl mx-auto space-y-8 animate-in slide-in-from-bottom-4 duration-500">
-                <section class="glass rounded-[2rem] p-8">
-                    <div class="text-center mb-8">
-                        <div class="w-16 h-16 bg-indigo-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <i class="fas fa-map-marker-alt text-indigo-500 text-2xl animate-bounce"></i>
-                        </div>
-                        <h2 class="text-2xl font-black text-white">אנשים בקרבת מקום</h2>
-                        <p class="text-slate-500 text-sm">המיקום שלך משותף רק כשאתה בלשונית זו.</p>
+            <hr class="border-slate-100">
+
+            <!-- 3. Calm Button -->
+            <section class="text-center">
+                <button id="calm-btn" onclick="startBreath()" class="w-full py-4 bg-white border-2 border-sky-100 text-sky-600 rounded-2xl font-bold hover:bg-sky-50 transition-all flex items-center justify-center gap-3">
+                    <i class="fas fa-wind"></i>
+                    דקה של שקט
+                </button>
+                
+                <div id="breath-area" class="hidden space-y-4 mt-2">
+                    <div class="w-16 h-16 bg-sky-400 rounded-full mx-auto breath-animation flex items-center justify-center text-white">
+                        <i class="fas fa-leaf"></i>
                     </div>
-                    
-                    <div id="nearby-list" class="space-y-4">
-                        <!-- Nearby Users -->
-                    </div>
-                </section>
-            </div>
+                    <p class="text-xs text-sky-500 font-medium">נשימה עמוקה... <span id="timer">60</span></p>
+                </div>
+            </section>
 
         </main>
+
+        <!-- Footer Info -->
+        <footer class="text-center">
+            <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                <i class="fas fa-shield-alt mr-1"></i> הכל נשמר על המכשיר שלך בלבד
+            </p>
+        </footer>
     </div>
 
+    <script>
+        // Mood Logic
+        function setMood(emoji) {
+            const messages = {
+                '😊': 'איזה כיף! תמשיך ככה.',
+                '😎': 'סטייל! הולך להיות יום מעולה.',
+                '😴': 'אולי כדאי לקחת הפסקה קצרה?',
+                '🤔': 'מחשבות טובות מביאות דברים טובים.'
+            };
+            document.getElementById('mood-text').textContent = messages[emoji];
+            localStorage.setItem('easy_mood', emoji);
+        }
+
+        // Goal Logic
+        function saveGoal() {
+            const input = document.getElementById('goal-input');
+            const val = input.value.trim();
+            if (!val) return;
+            
+            localStorage.setItem('easy_goal', val);
+            showGoal(val);
+        }
+
+        function showGoal(val) {
+            document.getElementById('current-goal').textContent = val;
+            document.getElementById('goal-display').classList.remove('hidden');
+            document.getElementById('goal-input-area').classList.add('hidden');
+        }
+
+        function clearGoal() {
+            localStorage.removeItem('easy_goal');
+            document.getElementById('goal-display').classList.add('hidden');
+            document.getElementById('goal-input-area').classList.remove('hidden');
+            document.getElementById('goal-input').value = '';
+            
+            // Effect
+            confetti();
+        }
+
+        // Breath Logic
+        let breathInterval;
+        function startBreath() {
+            const btn = document.getElementById('calm-btn');
+            const area = document.getElementById('breath-area');
+            const timerDisplay = document.getElementById('timer');
+            
+            btn.classList.add('hidden');
+            area.classList.remove('hidden');
+            
+            let timeLeft = 60;
+            timerDisplay.textContent = timeLeft;
+            
+            breathInterval = setInterval(() => {
+                timeLeft--;
+                timerDisplay.textContent = timeLeft;
+                if (timeLeft <= 0) {
+                    clearInterval(breathInterval);
+                    btn.classList.remove('hidden');
+                    area.classList.add('hidden');
+                    alert("כל הכבוד! חזרה לעניינים ברוגע.");
+                }
+            }, 1000);
+        }
+
+        // Init
+        window.onload = () => {
+            const savedGoal = localStorage.getItem('easy_goal');
+            if (savedGoal) showGoal(savedGoal);
+        };
+
+        // Simple Confetti Effect
+        function confetti() {
+            const colors = ['#0ea5e9', '#6366f1', '#a855f7'];
+            for(let i=0; i<30; i++) {
+                const el = document.createElement('div');
+                el.style.position = 'fixed';
+                el.style.width = '8px';
+                el.style.height = '8px';
+                el.style.backgroundColor = colors[Math.floor(Math.random()*colors.length)];
+                el.style.left = Math.random() * 100 + 'vw';
+                el.style.top = '100vh';
+                el.style.borderRadius = '50%';
+                el.style.zIndex = '100';
+                document.body.appendChild(el);
+                
+                const anim = el.animate([
+                    { transform: `translateY(0) rotate(0deg)`, opacity: 1 },
+                    { transform: `translateY(-100vh) rotate(720deg)`, opacity: 0 }
+                ], { duration: 2000 + Math.random()*1000, easing: 'ease-out' });
+                
+                anim.onfinish = () => el.remove();
+            }
+        }
+    </script>
 </body>
 </html>
