@@ -1,354 +1,298 @@
-import React, { useState, useEffect } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, onSnapshot, collection, query, updateDoc } from 'firebase/firestore';
-import { 
-  CheckCircle2, 
-  Circle, 
-  Clock, 
-  Plus, 
-  Trash2, 
-  Zap, 
-  X, 
-  StickyNote, 
-  Timer,
-  Play,
-  RefreshCw,
-  Trophy,
-  Cloud
-} from 'lucide-react';
-
-// Firebase Config
-const firebaseConfig = JSON.parse(__firebase_config);
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'productivity-hub';
-
-const App = () => {
-  // --- State ---
-  const [user, setUser] = useState(null);
-  const [tasks, setTasks] = useState([]);
-  const [newTask, setNewTask] = useState('');
-  const [notes, setNotes] = useState('');
-  const [timerTime, setTimerTime] = useState(25 * 60);
-  const [isTimerRunning, setIsTimerRunning] = useState(false);
-  const [currentTime, setCurrentTime] = useState(new Date());
-  const [syncStatus, setSyncStatus] = useState('מחובר'); // 'טוען', 'מחובר', 'שגיאה'
-
-  // --- Auth Effect ---
-  useEffect(() => {
-    const initAuth = async () => {
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
-      } catch (err) {
-        console.error("Auth error:", err);
-        setSyncStatus('שגיאה בחיבור');
-      }
-    };
-    initAuth();
-    const unsubscribe = onAuthStateChanged(auth, setUser);
-    return () => unsubscribe();
-  }, []);
-
-  // --- Firestore Data Sync Effect ---
-  useEffect(() => {
-    if (!user) return;
-
-    setSyncStatus('טוען נתונים...');
-
-    // Sync Tasks
-    const tasksRef = collection(db, 'artifacts', appId, 'users', user.uid, 'tasks');
-    const unsubscribeTasks = onSnapshot(tasksRef, (snapshot) => {
-      const taskList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      // מיון לפי זמן יצירה (בזיכרון כפי שנדרש)
-      setTasks(taskList.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
-      setSyncStatus('מחובר לענן');
-    }, (error) => {
-      console.error("Tasks sync error:", error);
-      setSyncStatus('שגיאת סנכרון');
-    });
-
-    // Sync Notes/Metadata
-    const metaRef = doc(db, 'artifacts', appId, 'users', user.uid, 'metadata', 'userSettings');
-    const unsubscribeMeta = onSnapshot(metaRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        if (data.notes !== undefined) setNotes(data.notes);
-      }
-    }, (error) => {
-      console.error("Meta sync error:", error);
-    });
-
-    return () => {
-      unsubscribeTasks();
-      unsubscribeMeta();
-    };
-  }, [user]);
-
-  // --- Clock Effect ---
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  // --- Pomodoro Effect ---
-  useEffect(() => {
-    let interval = null;
-    if (isTimerRunning && timerTime > 0) {
-      interval = setInterval(() => {
-        setTimerTime((prev) => prev - 1);
-      }, 1000);
-    } else if (timerTime === 0) {
-      setIsTimerRunning(false);
-    }
-    return () => clearInterval(interval);
-  }, [isTimerRunning, timerTime]);
-
-  // --- Firestore Actions ---
-  const addTask = async (e) => {
-    e.preventDefault();
-    if (!newTask.trim() || !user) return;
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LifeLift Pro Max | זיהוי מכשיר חכם</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     
-    const taskId = Date.now().toString();
-    const taskData = {
-      text: newTask,
-      completed: false,
-      priority: 'medium',
-      createdAt: Date.now()
-    };
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;700;800&display=swap');
+        body { font-family: 'Assistant', sans-serif; background-color: #020617; color: #e2e8f0; overflow-x: hidden; }
+        .glass { background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.05); }
+        .gradient-text { background: linear-gradient(135deg, #fff 0%, #94a3b8 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 10px; }
+        .task-item { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .task-item:hover { transform: translateY(-2px); background: rgba(255, 255, 255, 0.08); }
+        #global-loader { position: fixed; inset: 0; background: #020617; z-index: 100; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 1rem; }
+    </style>
 
-    try {
-      await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', taskId), taskData);
-      setNewTask('');
-    } catch (err) {
-      console.error("Add task error:", err);
-    }
-  };
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-  const toggleTask = async (id, currentStatus) => {
-    if (!user) return;
-    try {
-      await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', id), {
-        completed: !currentStatus
-      });
-    } catch (err) {
-      console.error("Toggle task error:", err);
-    }
-  };
+        // Global config access
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'lifelift-v1';
+        const initialToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
 
-  const deleteTask = async (id) => {
-    if (!user) return;
-    // כאן אפשר להשתמש ב-deleteDoc, אך לצורך הפשטות נשתמש ב-setDoc ריק או סימון למחיקה אם רוצים.
-    // אבל באמת עדיף פשוט להסיר. (נניח שאנחנו לא מוחקים פיזית אלא מעדכנים רשימה, אבל Firestore עדיף מחיקה)
-    // הערה: deleteDoc לא יובא, אז נשתמש בטכניקה של עדכון או פשוט נוסיף אותו.
-    // לצורך הפשטות נשאיר את זה ככה ונשתמש ב-setDoc כדי "למחוק" (במימוש מלא נשתמש ב-deleteDoc)
-  };
+        let currentUser = null;
 
-  const updateNotes = async (val) => {
-    setNotes(val);
-    if (!user) return;
-    try {
-      await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'metadata', 'userSettings'), {
-        notes: val
-      }, { merge: true });
-    } catch (err) {
-      console.error("Update notes error:", err);
-    }
-  };
+        // UI Helpers
+        const taskList = document.getElementById('task-list');
+        const taskCount = document.getElementById('task-count');
+        const notesArea = document.getElementById('notes-area');
+        const syncStatus = document.getElementById('sync-status');
+        const loader = document.getElementById('global-loader');
 
-  const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
+        // Initializing Authentication (Rule 3)
+        async function initAuth() {
+            try {
+                if (initialToken) {
+                    await signInWithCustomToken(auth, initialToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (err) {
+                console.error("Auth failed:", err);
+                syncStatus.innerHTML = '<span class="text-rose-500">שגיאת חיבור</span>';
+                loader.innerHTML = '<p class="text-rose-400">לא ניתן להתחבר לענן. נסה לרענן.</p>';
+            }
+        }
 
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-[#020617] flex items-center justify-center text-white">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-          <p className="animate-pulse font-medium">מתחבר לענן של Nexus...</p>
-        </div>
-      </div>
-    );
-  }
+        // Auth state listener
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                currentUser = user;
+                document.getElementById('device-id').textContent = user.uid.slice(0, 8);
+                startSync();
+                setTimeout(() => { loader.style.display = 'none'; }, 500);
+            }
+        });
 
-  return (
-    <div className="min-h-screen bg-[#020617] text-slate-200 font-sans selection:bg-indigo-500/30 overflow-x-hidden" dir="rtl">
-      {/* Background Decor */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-[-5%] left-[-5%] w-[30%] h-[30%] bg-indigo-600/10 blur-[100px] rounded-full"></div>
-        <div className="absolute bottom-[-5%] right-[-5%] w-[30%] h-[30%] bg-purple-600/10 blur-[100px] rounded-full"></div>
-      </div>
+        // Data Synchronization
+        function startSync() {
+            if (!currentUser) return;
 
-      <div className="relative z-10 flex flex-col h-screen">
-        {/* Header */}
-        <header className="p-6 md:px-12 flex flex-col md:flex-row items-center justify-between border-b border-white/5 bg-black/20 backdrop-blur-xl">
-          <div className="flex items-center gap-4 mb-4 md:mb-0">
-            <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
-              <Zap className="text-white w-7 h-7 fill-current" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-black tracking-tight text-white">NEXUS HUB</h1>
-              <div className="flex items-center gap-2">
-                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">CLOUD SYNC ACTIVE</p>
-                <div className={`flex items-center gap-1 text-[10px] font-bold ${syncStatus === 'מחובר לענן' ? 'text-emerald-400' : 'text-amber-400'}`}>
-                   <Cloud size={10} />
-                   <span>{syncStatus}</span>
+            // Sync Tasks
+            const tasksRef = collection(db, 'artifacts', appId, 'users', currentUser.uid, 'tasks');
+            onSnapshot(tasksRef, (snapshot) => {
+                const tasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderTasks(tasks.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
+                syncStatus.innerHTML = '<i class="fas fa-check-circle text-emerald-400"></i> מחובר ומסונכרן';
+            }, (error) => {
+                console.error("Task sync error:", error);
+                syncStatus.innerHTML = '<span class="text-amber-500">בעיית סנכרון</span>';
+            });
+
+            // Sync Notes
+            const notesRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'settings', 'notes');
+            onSnapshot(notesRef, (docSnap) => {
+                if (docSnap.exists() && document.activeElement !== notesArea) {
+                    notesArea.value = docSnap.data().content || '';
+                }
+            });
+        }
+
+        // Global functions for UI
+        window.addTask = async () => {
+            const input = document.getElementById('task-input');
+            const text = input.value.trim();
+            if (!text || !currentUser) return;
+
+            const taskId = Date.now().toString();
+            try {
+                await setDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'tasks', taskId), {
+                    text: text,
+                    completed: false,
+                    createdAt: Date.now()
+                });
+                input.value = '';
+            } catch (e) { console.error("Add failed", e); }
+        };
+
+        window.toggleTask = async (id, currentStatus) => {
+            if (!currentUser) return;
+            try {
+                await updateDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'tasks', id), {
+                    completed: !currentStatus
+                });
+            } catch (e) { console.error("Toggle failed", e); }
+        };
+
+        window.deleteTask = async (id) => {
+            if (!currentUser) return;
+            try {
+                await deleteDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'tasks', id));
+            } catch (e) { console.error("Delete failed", e); }
+        };
+
+        window.saveNotes = async () => {
+            if (!currentUser) return;
+            try {
+                await setDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'settings', 'notes'), {
+                    content: notesArea.value,
+                    updatedAt: Date.now()
+                }, { merge: true });
+            } catch (e) { console.error("Notes save failed", e); }
+        };
+
+        function renderTasks(tasks) {
+            taskList.innerHTML = '';
+            tasks.forEach(task => {
+                const div = document.createElement('div');
+                div.className = `task-item flex items-center gap-4 p-4 rounded-2xl border transition-all ${task.completed ? 'bg-black/20 border-white/5 opacity-50' : 'bg-white/5 border-white/10'}`;
+                div.innerHTML = `
+                    <button onclick="toggleTask('${task.id}', ${task.completed})" class="focus:outline-none">
+                        <i class="${task.completed ? 'fas fa-check-circle text-emerald-400' : 'far fa-circle text-slate-500'} text-xl"></i>
+                    </button>
+                    <span class="flex-1 text-sm ${task.completed ? 'line-through text-slate-500' : 'text-slate-200'}">${task.text}</span>
+                    <button onclick="deleteTask('${task.id}')" class="text-slate-600 hover:text-rose-500 transition-colors p-2">
+                        <i class="fas fa-trash-alt"></i>
+                    </button>
+                `;
+                taskList.appendChild(div);
+            });
+            taskCount.textContent = `${tasks.filter(t => !t.completed).length} נותרו`;
+        }
+
+        // Timer Logic
+        let timerSeconds = 25 * 60;
+        let timerInterval = null;
+        window.toggleTimer = () => {
+            const btn = document.getElementById('timer-toggle');
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+                btn.textContent = 'המשך';
+                btn.className = "flex-1 bg-white text-slate-900 py-3 rounded-xl font-bold hover:bg-indigo-50 transition-all";
+            } else {
+                btn.textContent = 'עצור';
+                btn.className = "flex-1 bg-rose-500 text-white py-3 rounded-xl font-bold hover:bg-rose-600 transition-all";
+                timerInterval = setInterval(() => {
+                    if (timerSeconds > 0) {
+                        timerSeconds--;
+                        updateTimerUI();
+                    } else {
+                        clearInterval(timerInterval);
+                        timerInterval = null;
+                        alert("זמן הפוקוס נגמר! הגיע הזמן להקלה.");
+                    }
+                }, 1000);
+            }
+        };
+
+        function updateTimerUI() {
+            const m = Math.floor(timerSeconds/60).toString().padStart(2,'0');
+            const s = (timerSeconds%60).toString().padStart(2,'0');
+            document.getElementById('timer-display').textContent = `${m}:${s}`;
+        }
+
+        // Kick off
+        initAuth();
+    </script>
+</head>
+<body class="min-h-screen">
+
+    <!-- Loader -->
+    <div id="global-loader">
+        <div class="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+        <p class="text-indigo-400 font-bold animate-pulse">מזהה מכשיר ומתחבר לענן...</p>
+    </div>
+
+    <!-- Background Decoration -->
+    <div class="fixed inset-0 pointer-events-none overflow-hidden">
+        <div class="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-indigo-600/10 blur-[120px] rounded-full"></div>
+        <div class="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-600/10 blur-[120px] rounded-full"></div>
+    </div>
+
+    <div class="relative z-10 flex flex-col min-h-screen">
+        <header class="p-6 md:px-12 flex flex-col md:flex-row items-center justify-between border-b border-white/5 bg-black/20 backdrop-blur-xl">
+            <div class="flex items-center gap-4 mb-4 md:mb-0">
+                <div class="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/30">
+                    <i class="fas fa-fingerprint text-white text-xl"></i>
                 </div>
-              </div>
+                <div>
+                    <h1 class="text-2xl font-black gradient-text tracking-tighter uppercase">LifeLift</h1>
+                    <div id="sync-status" class="text-[10px] text-slate-500 font-bold uppercase tracking-widest flex items-center gap-2">
+                        מתחבר...
+                    </div>
+                </div>
             </div>
-          </div>
-
-          <div className="flex items-center gap-8">
-            <div className="text-right hidden sm:block">
-              <p className="text-sm font-medium text-slate-400">{currentTime.toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
-              <p className="text-2xl font-bold text-white tabular-nums">{currentTime.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</p>
+            <div class="flex items-center gap-6">
+                <div class="text-right hidden sm:block">
+                    <div id="clock" class="text-xl font-bold tabular-nums text-white">00:00:00</div>
+                    <div class="text-[10px] text-slate-500 font-mono uppercase tracking-tighter">Device ID: <span id="device-id">...</span></div>
+                </div>
+                <div class="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
+                    <i class="fas fa-shield-alt text-indigo-400"></i>
+                </div>
             </div>
-          </div>
         </header>
 
-        {/* Content Area */}
-        <main className="flex-1 overflow-y-auto p-4 md:p-10 max-w-7xl mx-auto w-full">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            
-            {/* Left Column: Tasks */}
-            <div className="lg:col-span-7 space-y-6">
-              <section className="bg-white/5 border border-white/10 rounded-3xl p-6 backdrop-blur-md">
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-xl font-bold flex items-center gap-2">
-                    <CheckCircle2 className="text-indigo-400" />
-                    משימות להיום
-                  </h2>
-                  <span className="text-xs bg-indigo-500/20 text-indigo-400 px-3 py-1 rounded-full font-bold">
-                    {tasks.filter(t => !t.completed).length} נותרו
-                  </span>
-                </div>
-
-                <form onSubmit={addTask} className="relative mb-6">
-                  <input 
-                    type="text" 
-                    value={newTask}
-                    onChange={(e) => setNewTask(e.target.value)}
-                    placeholder="הוסף משימה חדשה..." 
-                    className="w-full bg-black/40 border border-white/10 rounded-2xl py-4 pr-12 pl-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all text-sm"
-                  />
-                  <Plus className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500" size={20} />
-                </form>
-
-                <div className="space-y-3 max-h-[450px] overflow-y-auto custom-scrollbar">
-                  {tasks.map(task => (
-                    <div 
-                      key={task.id} 
-                      className={`group flex items-center gap-4 p-4 rounded-2xl border transition-all ${
-                        task.completed ? 'bg-black/20 border-white/5 opacity-60' : 'bg-white/5 border-white/10 hover:border-indigo-500/30'
-                      }`}
-                    >
-                      <button onClick={() => toggleTask(task.id, task.completed)} className="shrink-0">
-                        {task.completed ? <CheckCircle2 className="text-emerald-500" /> : <Circle className="text-slate-600 group-hover:text-indigo-400 transition-colors" />}
-                      </button>
-                      <span className={`flex-1 text-sm ${task.completed ? 'line-through text-slate-500' : 'text-slate-200'}`}>
-                        {task.text}
-                      </span>
-                      {/* מחיקה מושבתת זמנית עד הוספת deleteDoc לייבוא או שימוש ב-Update ייעודי */}
+        <main class="flex-1 p-4 md:p-10 max-w-6xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <!-- Tasks Column -->
+            <div class="lg:col-span-7 space-y-6">
+                <section class="glass rounded-[2.5rem] p-8 shadow-2xl">
+                    <div class="flex items-center justify-between mb-8">
+                        <h2 class="text-2xl font-black text-white flex items-center gap-3">
+                            <i class="fas fa-tasks text-indigo-500"></i>
+                            משימות במכשיר זה
+                        </h2>
+                        <span id="task-count" class="text-xs bg-indigo-500/20 text-indigo-400 px-4 py-1.5 rounded-full font-black">0 נותרו</span>
                     </div>
-                  ))}
-                  {tasks.length === 0 && (
-                    <div className="text-center py-10 text-slate-500">
-                      אין משימות. הגיע הזמן לתכנן את היום! 🚀
+
+                    <div class="flex gap-3 mb-8">
+                        <input type="text" id="task-input" placeholder="הוסיפו משימה חדשה..." 
+                            onkeydown="if(event.key==='Enter') addTask()"
+                            class="flex-1 bg-black/40 border border-white/10 rounded-2xl py-4 px-6 focus:ring-2 focus:ring-indigo-500/50 outline-none text-sm transition-all text-white placeholder:text-slate-600">
+                        <button onclick="addTask()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-8 rounded-2xl transition-all shadow-lg shadow-indigo-600/30 flex items-center justify-center">
+                            <i class="fas fa-plus"></i>
+                        </button>
                     </div>
-                  )}
-                </div>
-              </section>
+
+                    <div id="task-list" class="space-y-3 max-h-[500px] overflow-y-auto custom-scrollbar pr-2">
+                        <!-- Tasks dynamically loaded -->
+                    </div>
+                </section>
             </div>
 
-            {/* Right Column: Widgets */}
-            <div className="lg:col-span-5 space-y-8">
-              
-              {/* Pomodoro Widget */}
-              <section className="bg-gradient-to-br from-indigo-600/20 to-purple-600/20 border border-white/10 rounded-3xl p-8 backdrop-blur-md relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-full h-1 bg-white/10">
-                   <div 
-                    className="h-full bg-indigo-500 transition-all duration-1000" 
-                    style={{ width: `${(timerTime / (25 * 60)) * 100}%` }}
-                   ></div>
-                </div>
-                
-                <div className="flex items-center gap-3 mb-6">
-                  <Timer className="text-indigo-400" />
-                  <h3 className="font-bold text-lg">זמן ריכוז</h3>
-                </div>
+            <!-- Widgets Column -->
+            <div class="lg:col-span-5 space-y-8">
+                <!-- Pomodoro Widget -->
+                <section class="bg-gradient-to-br from-indigo-600/20 to-purple-600/20 border border-white/10 rounded-[2.5rem] p-8 backdrop-blur-md text-center">
+                    <h3 class="text-indigo-300 text-[10px] font-black uppercase tracking-[0.2em] mb-4">Deep Focus Mode</h3>
+                    <div id="timer-display" class="text-7xl font-black text-white tabular-nums mb-8 tracking-tighter">25:00</div>
+                    <div class="flex gap-4">
+                        <button id="timer-toggle" onclick="toggleTimer()" class="flex-1 bg-white text-slate-900 py-4 rounded-2xl font-black hover:bg-indigo-50 transition-all shadow-xl">התחל</button>
+                        <button onclick="location.reload()" class="p-4 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 transition-all text-slate-400">
+                            <i class="fas fa-redo-alt"></i>
+                        </button>
+                    </div>
+                </section>
 
-                <div className="text-center mb-8">
-                  <div className="text-6xl font-black text-white tracking-tighter tabular-nums mb-2">
-                    {formatTime(timerTime)}
-                  </div>
-                  <p className="text-xs text-indigo-300 font-bold uppercase italic">Deep Work Mode</p>
-                </div>
-
-                <div className="flex gap-4">
-                  <button 
-                    onClick={() => setIsTimerRunning(!isTimerRunning)}
-                    className={`flex-1 py-4 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all ${
-                      isTimerRunning ? 'bg-rose-500/20 text-rose-500 hover:bg-rose-500/30' : 'bg-indigo-500 text-white hover:bg-indigo-400 shadow-lg shadow-indigo-500/20'
-                    }`}
-                  >
-                    {isTimerRunning ? <X size={20} /> : <Play size={20} fill="currentColor" />}
-                    {isTimerRunning ? 'עצור' : 'התחל'}
-                  </button>
-                  <button 
-                    onClick={() => {setTimerTime(25 * 60); setIsTimerRunning(false);}}
-                    className="p-4 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 transition-all"
-                  >
-                    <RefreshCw size={20} />
-                  </button>
-                </div>
-              </section>
-
-              {/* Quick Notes */}
-              <section className="bg-white/5 border border-white/10 rounded-3xl p-6 backdrop-blur-md">
-                <div className="flex items-center gap-3 mb-4">
-                  <StickyNote className="text-amber-400" />
-                  <h3 className="font-bold">פתקים מהירים (נשמרים אוטומטית)</h3>
-                </div>
-                <textarea 
-                  value={notes}
-                  onChange={(e) => updateNotes(e.target.value)}
-                  className="w-full h-40 bg-black/20 border border-white/5 rounded-2xl p-4 text-sm text-slate-300 focus:outline-none focus:ring-1 focus:ring-amber-500/30 resize-none leading-relaxed"
-                  placeholder="כתבו רעיון מהיר..."
-                ></textarea>
-              </section>
-
-              {/* User Identity Info */}
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center justify-between">
-                <div>
-                  <p className="text-[10px] text-slate-500 font-bold uppercase">ID משתמש</p>
-                  <p className="text-[10px] text-indigo-400 font-mono truncate w-32">{user.uid}</p>
-                </div>
-                <div className="text-right">
-                   <p className="text-[10px] text-slate-500 font-bold uppercase">השלמות</p>
-                   <p className="text-xl font-black text-white">{tasks.filter(t => t.completed).length}</p>
-                </div>
-              </div>
-
+                <!-- Notes Widget -->
+                <section class="glass rounded-[2.5rem] p-8">
+                    <h3 class="font-black mb-4 flex items-center gap-3 text-white">
+                        <i class="fas fa-lightbulb text-amber-400"></i>
+                        פתקים ומחשבות
+                    </h3>
+                    <textarea id="notes-area" oninput="saveNotes()" 
+                        class="w-full h-48 bg-black/20 border border-white/5 rounded-2xl p-6 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-indigo-500/30 leading-relaxed text-slate-300 custom-scrollbar"
+                        placeholder="כתבו רעיון מהיר שתישמר רק במכשיר הזה..."></textarea>
+                    <p class="text-[10px] text-slate-500 mt-4 text-center">הפתקים נשמרים בענן עבור המכשיר שלך בלבד.</p>
+                </section>
             </div>
-          </div>
         </main>
-      </div>
-
-      <style dangerouslySetInnerHTML={{ __html: `
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
-      `}} />
     </div>
-  );
-};
 
-export default App;
+    <script>
+        // Separate script for basic non-module UI logic
+        function updateClock() {
+            const now = new Date();
+            const clockEl = document.getElementById('clock');
+            if (clockEl) clockEl.textContent = now.toLocaleTimeString('he-IL');
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+    </script>
+</body>
+</html>
