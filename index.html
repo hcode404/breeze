@@ -3,354 +3,256 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NEON CHAOS | PRO MAX EDITION</title>
+    <title>GLITCH DIMENSION | 3D PRO MAX</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
-        body {
-            margin: 0;
-            background-color: #000;
-            color: #fff;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            overflow: hidden;
-            user-select: none;
-        }
-
-        canvas {
-            display: block;
-        }
-
-        .ui-overlay {
+        body { margin: 0; background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
+        canvas { display: block; }
+        
+        #overlay {
             position: fixed;
             inset: 0;
+            z-index: 10;
             pointer-events: none;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
             padding: 2rem;
-            z-index: 10;
         }
 
-        .glass-panel {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+        .glass {
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(0, 242, 255, 0.3);
             border-radius: 1.5rem;
-            padding: 1.5rem;
             pointer-events: auto;
         }
 
-        .neon-text {
-            text-shadow: 0 0 10px #00f2ff, 0 0 20px #00f2ff;
-        }
-
-        .scanline {
-            width: 100%;
-            height: 100px;
-            z-index: 5;
-            background: linear-gradient(0deg, rgba(0, 0, 0, 0) 0%, rgba(0, 242, 255, 0.05) 50%, rgba(0, 0, 0, 0) 100%);
-            opacity: 0.1;
-            position: absolute;
-            bottom: 100%;
-            animation: scanline 4s linear infinite;
-        }
-
-        @keyframes scanline {
-            0% { bottom: 100%; }
-            100% { bottom: -100px; }
-        }
-
         .shimmer {
-            background: linear-gradient(90deg, #00f2ff, #7000ff, #00f2ff);
+            background: linear-gradient(90deg, #ff00ff, #00f2ff, #ff00ff);
             background-size: 200% auto;
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            animation: shine 3s linear infinite;
+            animation: shine 2s linear infinite;
         }
 
-        @keyframes shine {
-            to { background-position: 200% center; }
-        }
+        @keyframes shine { to { background-position: 200% center; } }
 
-        #vignette {
+        #start-screen {
             position: fixed;
             inset: 0;
-            box-shadow: inset 0 0 150px rgba(0,0,0,0.9);
-            pointer-events: none;
-            z-index: 2;
+            z-index: 100;
+            background: radial-gradient(circle, #1e1b4b 0%, #020617 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+
+        .power-btn {
+            background: linear-gradient(45deg, #4f46e5, #06b6d4);
+            box-shadow: 0 0 50px rgba(6, 182, 212, 0.5);
+            transition: all 0.3s ease;
+        }
+
+        .power-btn:hover {
+            transform: scale(1.1) rotate(2deg);
+            box-shadow: 0 0 80px rgba(6, 182, 212, 0.8);
+        }
+
+        .glitch-text {
+            animation: glitch 1s linear infinite;
+        }
+
+        @keyframes glitch {
+            2%, 64% { transform: translate(2px, 0) skew(0deg); }
+            4%, 60% { transform: translate(-2px, 0) skew(0deg); }
+            62% { transform: translate(0, 0) skew(5deg); }
         }
     </style>
 </head>
 <body>
 
-    <div id="vignette"></div>
-    <div class="scanline"></div>
-
-    <!-- Start Screen -->
-    <div id="start-screen" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-xl">
-        <div class="text-center space-y-8 p-10 glass-panel border-indigo-500/50 max-w-lg">
-            <h1 class="text-6xl font-black shimmer italic tracking-tighter uppercase">NEON CHAOS</h1>
-            <p class="text-slate-400 font-bold uppercase tracking-widest text-sm">Pro Max Reality Engine</p>
-            
-            <div class="flex flex-col gap-4">
-                <button onclick="initApp()" class="bg-indigo-600 hover:bg-cyan-500 text-white py-6 rounded-3xl font-black text-2xl transition-all shadow-[0_0_30px_rgba(79,70,229,0.5)] active:scale-95">
-                    להתפרע עכשיו! 🚀
-                </button>
-                <p class="text-[10px] text-slate-500 italic">נדרש אישור מצלמה ומיקרופון לחוויית ה-Pro Max</p>
-            </div>
+    <div id="start-screen">
+        <div class="space-y-8 p-10">
+            <h1 class="text-8xl font-black italic shimmer tracking-tighter uppercase glitch-text">GLITCH</h1>
+            <p class="text-cyan-400 font-bold tracking-[0.5em] uppercase text-sm">Dimension 3.0 • Engine Pro Max</p>
+            <button onclick="initExperience()" class="power-btn text-white px-16 py-8 rounded-full text-3xl font-black uppercase tracking-widest active:scale-90">
+                שגר אותי! ⚡
+            </button>
+            <p class="text-slate-500 text-xs italic">שים אוזניות. תגביר ווליום. תתחיל לצעוק.</p>
         </div>
     </div>
 
-    <div class="ui-overlay">
-        <!-- Top Nav -->
+    <div id="overlay" class="hidden">
         <div class="flex justify-between items-start">
-            <div class="glass-panel py-3 px-6">
-                <h2 class="text-xl font-black text-white italic">NEON <span class="text-cyan-400">CHAOS</span></h2>
-                <div class="flex items-center gap-2 mt-1">
-                    <span id="fps" class="text-[9px] font-mono text-emerald-400">60 FPS</span>
-                    <span class="w-1 h-1 bg-white/20 rounded-full"></span>
-                    <span id="particle-count" class="text-[9px] font-mono text-cyan-400">2000 PARTICLES</span>
+            <div class="glass p-4 px-8">
+                <h2 class="text-2xl font-black text-white italic">GLITCH <span class="text-cyan-400">DIMENSION</span></h2>
+                <div class="flex gap-4 mt-2">
+                    <div id="mic-label" class="text-[10px] font-bold text-rose-500 uppercase">מיקרופון: לא מחובר</div>
+                    <div id="fps" class="text-[10px] font-bold text-emerald-400 uppercase">FPS: 60</div>
                 </div>
-            </div>
-
-            <div class="glass-panel flex gap-4">
-                <button onclick="toggleFullscreen()" class="text-white/50 hover:text-white transition-colors"><i class="fas fa-expand"></i></button>
-                <button onclick="location.reload()" class="text-white/50 hover:text-rose-400 transition-colors"><i class="fas fa-power-off"></i></button>
             </div>
         </div>
 
-        <!-- Bottom Controls -->
-        <div class="flex flex-col md:flex-row gap-6 items-end justify-between pointer-events-none">
-            <div class="glass-panel w-full md:w-64 space-y-4 pointer-events-auto">
-                <div>
-                    <div class="flex justify-between text-[10px] font-bold mb-2 uppercase tracking-widest">
-                        <span>רגישות קול</span>
-                        <span id="mic-val">0%</span>
-                    </div>
-                    <div class="h-1 w-full bg-white/10 rounded-full overflow-hidden">
-                        <div id="mic-bar" class="h-full bg-cyan-400 transition-all duration-75" style="width: 0%"></div>
-                    </div>
+        <div class="flex justify-center mb-10">
+            <div class="glass p-6 text-center space-y-2">
+                <p class="text-cyan-400 text-xs font-bold uppercase">Chaos Level</p>
+                <div class="w-64 h-2 bg-white/10 rounded-full overflow-hidden">
+                    <div id="chaos-bar" class="h-full bg-gradient-to-r from-cyan-500 to-rose-500 transition-all duration-75" style="width: 0%"></div>
                 </div>
-                <p class="text-[10px] text-slate-400 leading-tight">
-                    <i class="fas fa-info-circle mr-1"></i> תצעקו כדי לשנות את צבע העולם, תזיזו את הידיים כדי לשלוט בחלקיקים.
-                </p>
-            </div>
-
-            <div class="text-right glass-panel pointer-events-auto">
-                <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">מצב פעיל</p>
-                <h3 class="text-2xl font-black text-white italic tracking-tighter uppercase">KINETIC FLOW</h3>
+                <p class="text-[10px] text-slate-400">ככל שתצעקו יותר - הממד יתפרק יותר</p>
             </div>
         </div>
     </div>
 
-    <canvas id="canvas"></canvas>
-    <video id="video" class="hidden" autoplay playsinline></video>
+    <video id="video" style="display:none" autoplay playsinline></video>
 
     <script>
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d', { alpha: false });
-        const video = document.getElementById('video');
-        const fpsEl = document.getElementById('fps');
-        const micBar = document.getElementById('mic-bar');
-        const micVal = document.getElementById('mic-val');
+        let scene, camera, renderer, tunnel, cube, particles;
+        let video, videoTexture;
+        let analyser, dataArray;
+        let clock = new THREE.Clock();
 
-        let particles = [];
-        let width, height;
-        let lastTime = 0;
-        let frameCount = 0;
-        let micLevel = 0;
-        let audioContext, analyser, dataArray;
-        let motionCanvas, mCtx;
-        let motionX = 0, motionY = 0;
-        let mouseX = 0, mouseY = 0;
-        let isActive = false;
-        let hue = 180;
+        async function initExperience() {
+            document.getElementById('start-screen').style.display = 'none';
+            document.getElementById('overlay').classList.remove('hidden');
 
-        class Particle {
-            constructor() {
-                this.reset();
-            }
-
-            reset() {
-                this.x = Math.random() * width;
-                this.y = Math.random() * height;
-                this.vx = (Math.random() - 0.5) * 2;
-                this.vy = (Math.random() - 0.5) * 2;
-                this.size = Math.random() * 2 + 1;
-                this.baseSize = this.size;
-                this.life = Math.random() * 0.5 + 0.5;
-                this.color = `hsla(${hue}, 100%, 50%, ${this.life})`;
-            }
-
-            update() {
-                // Sound influence
-                const sFactor = micLevel * 0.1;
-                
-                // Motion/Mouse influence
-                const dx = (motionX || mouseX) - this.x;
-                const dy = (motionY || mouseY) - this.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                
-                if (dist < 200) {
-                    const force = (200 - dist) / 200;
-                    this.vx += (dx / dist) * force * 1.5;
-                    this.vy += (dy / dist) * force * 1.5;
-                    this.size = this.baseSize + (force * 5 * (micLevel / 50));
-                } else {
-                    this.size = this.baseSize;
-                }
-
-                this.x += this.vx;
-                this.y += this.vy;
-
-                // Friction
-                this.vx *= 0.96;
-                this.vy *= 0.96;
-
-                // Boundaries
-                if (this.x < 0 || this.x > width || this.y < 0 || this.y > height) {
-                    this.reset();
-                }
-
-                this.color = `hsla(${(hue + dist * 0.2) % 360}, 100%, 60%, ${this.life})`;
-            }
-
-            draw() {
-                ctx.fillStyle = this.color;
-                ctx.beginPath();
-                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-                ctx.fill();
-            }
-        }
-
-        async function initApp() {
-            document.getElementById('start-screen').classList.add('opacity-0');
-            setTimeout(() => document.getElementById('start-screen').remove(), 500);
-
+            // --- 1. Setup Camera & Mic ---
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { width: 640, height: 480 }, 
-                    audio: true 
-                });
-                video.srcObject = stream;
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
                 
-                // Audio Setup
-                audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                const source = audioContext.createMediaStreamSource(stream);
-                analyser = audioContext.createAnalyser();
+                // Video Texture
+                video = document.getElementById('video');
+                video.srcObject = stream;
+                videoTexture = new THREE.VideoTexture(video);
+
+                // Audio Context
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const source = audioCtx.createMediaStreamSource(stream);
+                analyser = audioCtx.createAnalyser();
                 analyser.fftSize = 256;
                 source.connect(analyser);
                 dataArray = new Uint8Array(analyser.frequencyBinCount);
+                document.getElementById('mic-label').textContent = "מיקרופון: פעיל 🎤";
+                document.getElementById('mic-label').classList.replace('text-rose-500', 'text-emerald-500');
 
-                // Motion setup
-                motionCanvas = document.createElement('canvas');
-                motionCanvas.width = 160;
-                motionCanvas.height = 120;
-                mCtx = motionCanvas.getContext('2d');
-
-                isActive = true;
-                resize();
-                createParticles();
-                requestAnimationFrame(animate);
+                initThree();
             } catch (err) {
-                alert("חובה לתת אישור למצלמה ולמיקרופון כדי לשחק!");
+                alert("חובה לאשר מצלמה ומיקרופון כדי להיכנס לממד!");
                 location.reload();
             }
         }
 
-        function createParticles() {
-            const count = window.innerWidth < 768 ? 1000 : 2500;
-            particles = [];
-            for (let i = 0; i < count; i++) {
-                particles.push(new Particle());
-            }
-            document.getElementById('particle-count').textContent = `${count} PARTICLES`;
-        }
+        function initThree() {
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x000000, 0.05);
 
-        function resize() {
-            width = canvas.width = window.innerWidth;
-            height = canvas.height = window.innerHeight;
-            if(isActive) createParticles();
-        }
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 5;
 
-        window.addEventListener('resize', resize);
-        window.addEventListener('mousemove', (e) => {
-            mouseX = e.clientX;
-            mouseY = e.clientY;
-        });
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.body.appendChild(renderer.domElement);
 
-        function analyzeMotion() {
-            if (!video.videoWidth) return;
-            
-            mCtx.drawImage(video, 0, 0, motionCanvas.width, motionCanvas.height);
-            const frame = mCtx.getImageData(0, 0, motionCanvas.width, motionCanvas.height);
-            
-            let totalX = 0, totalY = 0, count = 0;
-            for (let i = 0; i < frame.data.length; i += 16) {
-                const r = frame.data[i], g = frame.data[i+1], b = frame.data[i+2];
-                // Simple high-pass motion detection would go here, 
-                // but for "Pro Max" feel, we'll use center of bright pixels as a proxy
-                if (r + g + b > 400) {
-                    const px = (i / 4) % motionCanvas.width;
-                    const py = Math.floor((i / 4) / motionCanvas.width);
-                    totalX += px;
-                    totalY += py;
-                    count++;
-                }
-            }
-
-            if (count > 20) {
-                motionX = width - (totalX / count) * (width / motionCanvas.width);
-                motionY = (totalY / count) * (height / motionCanvas.height);
-            }
-        }
-
-        function animate(time) {
-            if (!isActive) return;
-
-            // Audio Level
-            analyser.getByteFrequencyData(dataArray);
-            const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-            micLevel = average;
-            micBar.style.width = `${Math.min(100, average * 1.5)}%`;
-            micVal.textContent = `${Math.floor(Math.min(100, average * 1.5))}%`;
-            
-            if (average > 40) {
-                hue = (hue + 2) % 360; // Sound shifts world color
-            }
-
-            analyzeMotion();
-
-            // Background Fade (Trails)
-            ctx.fillStyle = `rgba(0, 0, 0, ${0.1 + (average * 0.001)})`;
-            ctx.fillRect(0, 0, width, height);
-
-            // Draw Particles
-            particles.forEach(p => {
-                p.update();
-                p.draw();
+            // --- 2. The Tunnel (Infinite Neon) ---
+            const tunnelGeom = new THREE.CylinderGeometry(10, 10, 100, 32, 1, true);
+            const tunnelMat = new THREE.MeshBasicMaterial({
+                color: 0xffffff,
+                side: THREE.BackSide,
+                wireframe: true,
+                transparent: true,
+                opacity: 0.2
             });
+            tunnel = new THREE.Mesh(tunnelGeom, tunnelMat);
+            tunnel.rotation.x = Math.PI / 2;
+            scene.add(tunnel);
 
-            // FPS Counter
-            frameCount++;
-            if (time > lastTime + 1000) {
-                fpsEl.textContent = `${Math.round((frameCount * 1000) / (time - lastTime))} FPS`;
-                frameCount = 0;
-                lastTime = time;
+            // --- 3. The Face Cube (The Boss) ---
+            const cubeGeom = new THREE.BoxGeometry(2, 2, 2);
+            const cubeMat = new THREE.MeshBasicMaterial({ map: videoTexture });
+            cube = new THREE.Mesh(cubeGeom, cubeMat);
+            scene.add(cube);
+
+            // --- 4. Particles (Chaos) ---
+            const pCount = 5000;
+            const pGeom = new THREE.BufferGeometry();
+            const positions = new Float32Array(pCount * 3);
+            for (let i = 0; i < pCount * 3; i++) {
+                positions[i] = (Math.random() - 0.5) * 50;
             }
+            pGeom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            const pMat = new THREE.PointsMaterial({ color: 0x00f2ff, size: 0.1, transparent: true });
+            particles = new THREE.Points(pGeom, pMat);
+            scene.add(particles);
 
+            window.addEventListener('resize', onWindowResize);
+            animate();
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
             requestAnimationFrame(animate);
-        }
+            const time = clock.getElapsedTime();
 
-        function toggleFullscreen() {
-            if (!document.fullscreenElement) {
-                document.documentElement.requestFullscreen();
-            } else {
-                document.exitFullscreen();
+            // Audio Analysis
+            analyser.getByteFrequencyData(dataArray);
+            let sum = 0;
+            for(let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+            const avg = sum / dataArray.length;
+            const chaos = avg / 255;
+
+            // UI Update
+            document.getElementById('chaos-bar').style.width = (chaos * 100) + '%';
+            if(chaos > 0.3) {
+                document.getElementById('chaos-bar').style.boxShadow = `0 0 ${chaos * 50}px #00f2ff`;
             }
-        }
 
-        resize();
+            // 1. Move Camera through tunnel
+            camera.position.z -= 0.1;
+            if (camera.position.z < -20) camera.position.z = 5;
+
+            // 2. Rotate Cube (Face)
+            cube.rotation.y += 0.01;
+            cube.rotation.x += 0.005;
+            
+            // 3. React to Sound
+            const scale = 1 + chaos * 3;
+            cube.scale.set(scale, scale, scale);
+            
+            // Cube Position jitter
+            cube.position.x = Math.sin(time * 10) * chaos;
+            cube.position.y = Math.cos(time * 10) * chaos;
+
+            // 4. Color Shift
+            const hue = (time * 0.1 + chaos) % 1;
+            tunnel.material.color.setHSL(hue, 1, 0.5);
+            particles.material.color.setHSL((hue + 0.5) % 1, 1, 0.5);
+
+            // 5. Particles movement
+            particles.rotation.z += 0.002 + (chaos * 0.05);
+            
+            // 6. Camera Glitch Effect
+            if (chaos > 0.4) {
+                camera.rotation.z = Math.sin(time * 50) * 0.1;
+                camera.fov = 75 + Math.random() * 20;
+                camera.updateProjectionMatrix();
+            } else {
+                camera.rotation.z = 0;
+                camera.fov = 75;
+                camera.updateProjectionMatrix();
+            }
+
+            renderer.render(scene, camera);
+        }
     </script>
 </body>
 </html>
